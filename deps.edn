@@ -1,9 +1,10 @@
 ;; The browser bundle only: bb build
 {:paths ["src"]
  :deps {thheller/shadow-cljs {:mvn/version "3.4.12"}
+        ;; The tooltips of the composer in the language of the page.
         io.github.simplemono/rchat$client
         {:git/url "https://github.com/simplemono/rchat.git"
-         :git/sha "09808fed4ef2f6dc3848fda8c3b313291ddd652c"
+         :git/sha "5ec7828519924de4eeae1c2b61838ab8420f49f0"
          :deps/root "client"}
         ;; Newer than rchat's pin: commands post next to the page, which
         ;; the artifact projects behind /artifacts/<name>/ need.

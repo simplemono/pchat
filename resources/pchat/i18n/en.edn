@@ -1,0 +1,45 @@
+;; The texts of the page in English, the reference the other languages
+;; follow. A key is named for the part of the page, a value is a string or
+;; an m1p tuple: [:fn/str "Used {{:name}}"] fills in the params of the
+;; reference tuple on the page.
+{:page/chats "Chats"
+ :page/view-chat "Chat"
+ :page/view-made "What we made"
+
+ :chat/new "New chat"
+ :chat/untitled "New chat"
+ :chat/working "Working"
+ :chat/ready "Ready"
+ :chat/you "You"
+ :chat/handover "Ready for you"
+ :chat/model-failed "The model call failed."
+ :chat/rejected [:fn/str "That did not go through: {{:error}}"]
+
+ :tool/bash "Ran a command"
+ :tool/read "Looked at a file"
+ :tool/write "Wrote a file"
+ :tool/edit "Changed a file"
+ :tool/other [:fn/str "Used {{:name}}"]
+ :tool/running " …"
+ :tool/failed " · did not work"
+
+ :composer/placeholder "What should we make?"
+ :composer/send "Send"
+ :composer/stop "Stop"
+ :composer/attach "Attach an image, or paste one into the text"
+ :composer/remove "Remove"
+ :composer/key-missing "The API key of the model is not set in the environment of the server."
+
+ :artifacts/label "What we made"
+ :artifacts/open "Open"
+ :artifacts/download "Download"
+ :artifacts/creation "Your creation"
+ :artifacts/empty "What the agent makes for you appears here."
+ :artifacts/no-preview "There is no preview for this file. Download it from above."
+ :artifacts/starting "Starting this artifact …"
+ :artifacts/stopped [:fn/str "This artifact's process stopped (exit {{:exit}}). Its .log says why; pchat starts it again."]
+ :artifacts/reload-failed [:fn/str "Loading {{:file}} failed: {{:error}}"]
+
+ :command/nothing-to-send "Nothing to send."
+ :command/no-such-chat "No such chat."
+ :command/no-such-artifact "No such artifact."}

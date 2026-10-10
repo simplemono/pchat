@@ -1,6 +1,7 @@
 (ns pchat.chat-test
   (:require [clojure.test :refer [deftest is testing]]
             [pchat.chat :as chat]
+            [pchat.i18n :as i18n]
             [pchat.view :as view]))
 
 (def events
@@ -68,8 +69,8 @@
 
 (deftest page-test
   (let [chat (chat/fold chat/empty-chat events)
-        page (view/page {:chats {"a" chat} :current "a"} {})
-        feed (view/feed chat)
+        page (i18n/translate (view/page {:chats {"a" chat} :current "a"} {}) :en)
+        feed (i18n/translate (view/feed chat) :en)
         items (filter #(and (vector? %) (keyword? (first %)) (clojure.string/starts-with? (name (first %)) "div.item"))
                       (tree-seq coll? seq feed))]
     (testing "the empty assistant message is not shown, the last one is the handover"

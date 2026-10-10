@@ -58,7 +58,7 @@
                                 :text (text-of content)
                                 :thinking ""
                                 :done? true}
-                         (= "error" stopReason) (assoc :error (or errorMessage "The model call failed.")))]
+                         (= "error" stopReason) (assoc :error (or errorMessage [:i18n :chat/model-failed])))]
                       (for [{:keys [type id name arguments]} content
                             :when (= "toolCall" type)]
                         {:kind :tool

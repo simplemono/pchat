@@ -63,6 +63,16 @@ bb test
 `PCHAT_MODEL` and `PCHAT_PROVIDER` the model (default
 `openai/gpt-6.1-sol` on `openrouter`).
 
+The page is in English or German: the language of the browser picks
+(`Accept-Language`), `?lang=de` or `?lang=en` on the page URL overrides
+it for that tab. The texts are [m1p](https://github.com/cjohansen/m1p)
+dictionaries, `resources/pchat/i18n/<lang>.edn`, one file per language:
+the page is hiccup with `[:i18n :chat/new]` where a text goes, and
+`pchat.i18n/translate` folds the dictionary of the connection in before
+a frame leaves the server. `bb test` checks that the dictionaries have
+the same keys and that the source uses only keys they have. A third
+language is one more file.
+
 ### On a sprite
 
 ```bash
@@ -129,5 +139,8 @@ a port, a page.
 `bb deploy <sprite>` runs it as a service on a sprite behind the token
 link. The artifact projects run there as well: the JDK and git of the
 sprite resolve their dependencies once, then they start in seconds.
+
+Languages, 2026-10-10: English and German with m1p, chosen per
+connection from the browser or `?lang=`, see "Run it".
 
 Next: automations (a webhook per chat runs a script the agent wrote).

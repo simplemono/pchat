@@ -1,0 +1,43 @@
+;; Die Texte der Seite auf Deutsch. Die Schlüssel sind die von en.edn,
+;; der Test pchat.i18n-test achtet darauf.
+{:page/chats "Chats"
+ :page/view-chat "Chat"
+ :page/view-made "Was wir gemacht haben"
+
+ :chat/new "Neuer Chat"
+ :chat/untitled "Neuer Chat"
+ :chat/working "Arbeitet"
+ :chat/ready "Bereit"
+ :chat/you "Du"
+ :chat/handover "Bereit für dich"
+ :chat/model-failed "Der Aufruf des Modells ist fehlgeschlagen."
+ :chat/rejected [:fn/str "Das ist nicht durchgegangen: {{:error}}"]
+
+ :tool/bash "Befehl ausgeführt"
+ :tool/read "Datei angesehen"
+ :tool/write "Datei geschrieben"
+ :tool/edit "Datei geändert"
+ :tool/other [:fn/str "{{:name}} benutzt"]
+ :tool/running " …"
+ :tool/failed " · hat nicht geklappt"
+
+ :composer/placeholder "Was sollen wir machen?"
+ :composer/send "Senden"
+ :composer/stop "Stopp"
+ :composer/attach "Ein Bild anhängen oder eins in den Text einfügen"
+ :composer/remove "Entfernen"
+ :composer/key-missing "Der API-Schlüssel des Modells ist in der Umgebung des Servers nicht gesetzt."
+
+ :artifacts/label "Was wir gemacht haben"
+ :artifacts/open "Öffnen"
+ :artifacts/download "Herunterladen"
+ :artifacts/creation "Dein Werk"
+ :artifacts/empty "Was der Agent für dich macht, erscheint hier."
+ :artifacts/no-preview "Für diese Datei gibt es keine Vorschau. Lade sie oben herunter."
+ :artifacts/starting "Dieses Artefakt startet …"
+ :artifacts/stopped [:fn/str "Der Prozess dieses Artefakts hat sich beendet (Exit {{:exit}}). Seine .log sagt warum; pchat startet ihn neu."]
+ :artifacts/reload-failed [:fn/str "{{:file}} konnte nicht geladen werden: {{:error}}"]
+
+ :command/nothing-to-send "Nichts zu senden."
+ :command/no-such-chat "Diesen Chat gibt es nicht."
+ :command/no-such-artifact "Dieses Artefakt gibt es nicht."}

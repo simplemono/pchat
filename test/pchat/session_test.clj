@@ -1,6 +1,7 @@
 (ns pchat.session-test
   (:require [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
+            [pchat.i18n :as i18n]
             [pchat.session :as session]
             [pchat.view :as view]))
 
@@ -46,7 +47,7 @@
 (deftest sidebar-test
   (let [a (merge (session/load-chat fixture) {:updated 2})
         b {:id "b" :items [] :status :working :updated 3 :cost 0.0}
-        sidebar (view/sidebar {:chats {(:id a) a "b" b} :current "b"})
+        sidebar (i18n/translate (view/sidebar {:chats {(:id a) a "b" b} :current "b"}) :en)
         lis (filter #(and (vector? %) (= :li (first %))) (tree-seq coll? seq sidebar))]
     (is (= ["b" (:id a)] (map #(get-in % [1 :replicant/key]) lis)))
     (is (= "current working" (get-in (first lis) [1 :class])))

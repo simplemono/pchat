@@ -1,7 +1,9 @@
 (ns pchat.view
   "The page as a function of the app value: the sidebar with the chats,
   the header, the current chat (feed and composer). Classes follow rchat's
-  stylesheet, which pchat ships as its own, plus pchat.css for the sidebar."
+  stylesheet, which pchat ships as its own, plus pchat.css for the sidebar.
+  The texts are m1p reference tuples, `[:i18n :chat/new]`, that
+  `pchat.i18n/translate` turns into the language of the person."
   (:require [clojure.string :as str]
             [pchat.artifacts :as artifacts]
             [pchat.chat :as chat]
@@ -18,13 +20,14 @@
                   [:store/dissoc :pchat/attachments]]}]])
 
 (defn- tool-label
+  "The row of a tool call, named for a person."
   [{:keys [name]}]
   (case name
-    "bash" "Ran a command"
-    "read" "Looked at a file"
-    "write" "Wrote a file"
-    "edit" "Changed a file"
-    (str "Used " name)))
+    "bash" [:i18n :tool/bash]
+    "read" [:i18n :tool/read]
+    "write" [:i18n :tool/write]
+    "edit" [:i18n :tool/edit]
+    [:i18n :tool/other {:name name}]))
 
 (defn- tool-detail
   [{:keys [args]}]
@@ -36,11 +39,10 @@
 (defn- tool-view
   [{:keys [done? error? result] :as item}]
   [:details.work {:class (when error? "failed")}
-   [:summary (str (tool-label item)
-                  (cond
-                    (not done?) " …"
-                    error? " · did not work"
-                    :else ""))]
+   [:summary (tool-label item)
+    (cond
+      (not done?) [:i18n :tool/running]
+      error? [:i18n :tool/failed])]
    [:pre.command (tool-detail item)]
    (when done?
      (let [text (chat/result-text result)]
@@ -52,7 +54,7 @@
   (case kind
     :user
     [:div.item.user {:replicant/key index}
-     [:div.label "You"]
+     [:div.label [:i18n :chat/you]]
      (when (seq text)
        [:p.text text])
      (when (seq images)
@@ -65,7 +67,7 @@
     :assistant
     (if handover?
       [:div.item.handover {:replicant/key index}
-       [:div.label "Ready for you"]
+       [:div.label [:i18n :chat/handover]]
        [:div.text (markdown/children text)]
        (when error
          [:p.error error])]
@@ -115,25 +117,25 @@
    (when (= :working status)
      [:div.item.working {:replicant/key "working"}
       [:span.dot]
-      [:span "Working"]])])
+      [:span [:i18n :chat/working]]])])
 
 (defn chat-name
   [{:keys [name items]}]
   (or name
       (some #(when (= :user (:kind %)) (first (str/split-lines (:text %)))) items)
-      "New chat"))
+      [:i18n :chat/untitled]))
 
 (defn header
   [{:keys [status cost] :as chat}]
   [:header.bar
    ;; On a phone the sidebar is a drawer; this opens it (see the
    ;; checkbox in `page`).
-   [:label.menu {:for "nav" :aria-label "Chats"} "\u2630"]
+   [:label.menu {:for "nav" :aria-label [:i18n :page/chats]} "\u2630"]
    [:h1 (chat-name chat)]
    [:span.status {:class (name status)}
     (case status
-      :working "Working"
-      "Ready")]
+      :working [:i18n :chat/working]
+      [:i18n :chat/ready])]
    (when (pos? cost)
      [:span.spend (format "$%.2f" cost)])])
 
@@ -141,18 +143,20 @@
   [{:keys [status]} {:keys [key-missing?]}]
   [:div.composer
    (when key-missing?
-     [:p.error "The API key of the model is not set in the environment of the server."])
+     [:p.error [:i18n :composer/key-missing]])
    [:ui/composer {:ui/store-key :pchat/draft
                   :ui/attachments-key :pchat/attachments
                   :ui/upload-url "/upload"
                   :ui/send send-actions
-                  :ui/send-label "Send"
+                  :ui/send-label [:i18n :composer/send]
+                  :ui/attach-title [:i18n :composer/attach]
+                  :ui/remove-title [:i18n :composer/remove]
                   :ui/disabled? (boolean key-missing?)
                   :rows 3
-                  :placeholder "What should we make?"}]
+                  :placeholder [:i18n :composer/placeholder]}]
    (when (= :working status)
      [:button.stop {:on {:click [[:data/command {:command/kind :chat/abort}]]}}
-      "Stop"])])
+      [:i18n :composer/stop]])])
 
 (defn sidebar
   "The rows are labels of the drawer checkbox: a tap on a phone opens
@@ -165,7 +169,7 @@
      [:label.new {:for "nav"
                   :role "button"
                   :on {:click [[:data/command {:command/kind :chat/new}]]}}
-      "New chat"]
+      [:i18n :chat/new]]
      ;; The list is keyed by its order: a chat that moves to the top
      ;; makes a new list. Replicant 2026.07.1 records the wrong vdom for
      ;; a row it moves to the front, and the row's next change (the
@@ -187,15 +191,16 @@
   are the tabs, the stylesheet shows one of the two."
   []
   [:nav.views
-   [:label {:for "view-chat"} "Chat"]
-   [:label {:for "view-made"} "What we made"]])
+   [:label {:for "view-chat"} [:i18n :page/view-chat]]
+   [:label {:for "view-made"} [:i18n :page/view-made]]])
 
 (defn page
-  "`opts`: `:key-missing?` and `:project` (see `pchat.artifacts/view`)."
-  [{:keys [chats current] files :artifacts/list :as db} opts]
+  "`opts`: `:key-missing?`, `:locale` (the language of the page, see
+  `pchat.i18n`) and `:project` (see `pchat.artifacts/view`)."
+  [{:keys [chats current] files :artifacts/list :as db} {:keys [locale] :as opts}]
   (let [chat (get chats current)
         card? (seq files)]
-    [:div.pchat
+    [:div.pchat {:lang (some-> locale name)}
      ;; The drawer state on a phone, toggled by labels, never rendered
      ;; with :checked so that the person's choice survives a frame.
      [:input#nav.toggle {:type "checkbox"}]

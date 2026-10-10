@@ -17,6 +17,7 @@
             [org.httpkit.server :as server]
             [pchat.artifacts :as artifacts]
             [pchat.chat :as chat]
+            [pchat.i18n :as i18n]
             [pchat.looks :as looks]
             [pchat.pi :as pi]
             [pchat.projects :as projects]
@@ -188,6 +189,11 @@
         (swap! pis assoc id handle)
         handle)))
 
+(defn- say
+  "A text of the page in the language of the request."
+  [w text]
+  (i18n/translate text (i18n/locale (:ring/request w))))
+
 (defn- send-command
   [w]
   (let [{:keys [text images]} (command/command-data w)
@@ -196,7 +202,7 @@
                                          (keep :name images)))
         id (:current @db)]
     (if (and (str/blank? text) (empty? images))
-      (command/rejected w "Nothing to send.")
+      (command/rejected w (say w [:i18n :command/nothing-to-send]))
       (let [p (ensure-pi! id)
             streaming? (= :working (get-in @db [:chats id :status]))]
         (pi/prompt! p (if (str/blank? text) "Look at this." text) streaming? images)
@@ -220,7 +226,7 @@
     (if (get-in @db [:chats id])
       (do (open! id)
           (command/accepted w))
-      (command/rejected w "No such chat."))))
+      (command/rejected w (say w [:i18n :command/no-such-chat])))))
 
 (defn- open-artifact-command
   [w]
@@ -228,14 +234,18 @@
     (if (some #(= path (:path %)) (:artifacts/list @db))
       (do (artifacts/pick! artifacts path)
           (command/accepted w))
-      (command/rejected w "No such artifact."))))
+      (command/rejected w (say w [:i18n :command/no-such-artifact])))))
 
 (defn page-view
-  [_w]
-  (let [value @db]
-    (view/page value {:key-missing? key-missing?
-                      :project (fn [{:keys [path]}]
-                                 (get-in value [:projects path]))})))
+  "The page in the language of the connection."
+  [w]
+  (let [value @db
+        locale (i18n/locale (:ring/request w))]
+    (-> (view/page value {:key-missing? key-missing?
+                          :locale locale
+                          :project (fn [{:keys [path]}]
+                                     (get-in value [:projects path]))})
+        (i18n/translate locale))))
 
 (def head
   (str "<title>pchat</title>"

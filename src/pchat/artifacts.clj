@@ -156,7 +156,8 @@
   [{:keys [path kind mtime] :as artifact} {:keys [project]}]
   (case kind
     :page [:ui/canvas {:ui/src (str path-prefix "/" path)
-                       :ui/rev mtime}]
+                       :ui/rev mtime
+                       :ui/title [:i18n :artifacts/creation]}]
     :image [:div.artifact-media
             [:img {:replicant/key path
                    :src (src artifact)
@@ -171,15 +172,16 @@
                      :controls true}]]
     :project (let [{:keys [ready-at exit reload]} (when project (project artifact))]
                (cond
-                 exit [:div.canvas-placeholder
-                       (str "This artifact's process stopped (exit " exit "). Its .log says why; pchat starts it again.")]
+                 exit [:div.canvas-placeholder [:i18n :artifacts/stopped {:exit exit}]]
                  ready-at (list
                            (when (:error reload)
-                             [:p.error (str "Loading " (:file reload) " failed: " (:error reload))])
+                             [:p.error [:i18n :artifacts/reload-failed {:file (:file reload)
+                                                                        :error (:error reload)}]])
                            [:ui/canvas {:ui/src (str path-prefix "/" path "/")
-                                        :ui/rev ready-at}])
-                 :else [:div.canvas-placeholder "Starting this artifact …"]))
-    [:div.canvas-placeholder "There is no preview for this file. Download it from above."]))
+                                        :ui/rev ready-at
+                                        :ui/title [:i18n :artifacts/creation]}])
+                 :else [:div.canvas-placeholder [:i18n :artifacts/starting]]))
+    [:div.canvas-placeholder [:i18n :artifacts/no-preview]]))
 
 (defn view
   "The pane: a chooser over the artifacts, open and download links, the
@@ -191,7 +193,7 @@
   (let [artifact (some #(when (= current (:path %)) %) files)]
     [:div.canvas-pane
      [:div.canvas-bar
-      [:span.label "What we made"]
+      [:span.label [:i18n :artifacts/label]]
       (when (seq files)
         [:select.artifacts {:value (:path artifact)
                             :on {:change [[:data/command {:command/kind :artifacts/open
@@ -203,15 +205,15 @@
           [:a.link {:href (str path-prefix "/" (:path artifact) "/")
                     :target "_blank"
                     :rel "noopener"}
-           "Open"]
+           [:i18n :artifacts/open]]
           (list
            [:a.link {:href (src artifact)
                      :target "_blank"
                      :rel "noopener"}
-            "Open"]
+            [:i18n :artifacts/open]]
            [:a.link {:href (src artifact)
                      :download (last (str/split (:path artifact) #"/"))}
-            "Download"])))]
+            [:i18n :artifacts/download]])))]
      (if artifact
        (content artifact opts)
-       [:div.canvas-placeholder "What the agent makes for you appears here."])])))
+       [:div.canvas-placeholder [:i18n :artifacts/empty]])])))

@@ -84,7 +84,7 @@
                       (-> chat
                           (update-last #(= :assistant (:kind %))
                                        #(cond-> (assoc % :done? true)
-                                          (= "error" stopReason) (assoc :error (or errorMessage "The model call failed."))))
+                                          (= "error" stopReason) (assoc :error (or errorMessage [:i18n :chat/model-failed]))))
                           (update :cost + (or (get-in usage [:cost :total]) 0.0)))
                       chat))
     "tool_execution_start" (update chat :items conj {:kind :tool
@@ -97,7 +97,7 @@
                                               :error? (boolean (:isError e))))
     "response" (if (false? (:success e))
                  (update chat :items conj {:kind :note
-                                           :text (str "That did not go through: " (:error e))})
+                                           :text [:i18n :chat/rejected {:error (:error e)}]})
                  chat)
     "stderr" (update chat :log conj (:line e))
     "exited" (-> chat

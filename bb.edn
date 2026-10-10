@@ -12,8 +12,10 @@
          :deps/root "server"}
         io.github.simplemono/rchat$server
         {:git/url "https://github.com/simplemono/rchat.git"
-         :git/sha "09808fed4ef2f6dc3848fda8c3b313291ddd652c"
-         :deps/root "server"}}
+         :git/sha "5ec7828519924de4eeae1c2b61838ab8420f49f0"
+         :deps/root "server"}
+        ;; The texts of the page per language, see pchat.i18n.
+        no.cjohansen/m1p {:mvn/version "2026.07.1"}}
  :tasks
  {:requires ([babashka.fs :as fs]
              [babashka.process :refer [shell]]
