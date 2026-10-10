@@ -87,5 +87,12 @@ of them. The newest thing the agent wrote takes the pane, a pick of the
 user holds until the agent writes something newer. The folder is read
 after every tool call and twice a second.
 
+Images, 2026-10-10: paste, drop or attach images to a message. The
+browser uploads them to `/upload` (rchat's content-addressed store under
+`workspace/.pchat/looks/`), the message names them, the server reads them
+back as pi's image blocks, and the thumbnails sit under the message, also
+after a restart: the base64 pi echoes and keeps in the session file is
+interned into the same file names (`pchat.looks`).
+
 Next: fnmotion designs as artifacts with a player and scrubber, then token
 auth and `bb deploy` to a sprite.

@@ -72,12 +72,17 @@
     (.flush in)))
 
 (defn prompt!
-  "Sends the user's message. While pi is streaming it is queued as a
-  steering message, delivered before the next model call."
-  [pi text streaming?]
-  (send! pi (cond-> {:type "prompt"
-                     :message text}
-              streaming? (assoc :streamingBehavior "steer"))))
+  "Sends the user's message, with `images` as pi's image blocks
+  `[{:type \"image\" :data base64 :mimeType ...}]`. While pi is streaming
+  it is queued as a steering message, delivered before the next model
+  call."
+  ([pi text streaming?]
+   (prompt! pi text streaming? nil))
+  ([pi text streaming? images]
+   (send! pi (cond-> {:type "prompt"
+                      :message text}
+               streaming? (assoc :streamingBehavior "steer")
+               (seq images) (assoc :images (vec images))))))
 
 (defn abort!
   [pi]

@@ -2,7 +2,7 @@
   "A chat as a value: what the events of its pi process add up to.
   `event` folds one event into the chat, the view renders the chat.
 
-      {:items  [{:kind :user :text ...}
+      {:items  [{:kind :user :text ... :images [url ...]}
                 {:kind :assistant :text ... :thinking ... :done? ...}
                 {:kind :tool :id ... :name ... :args ... :result ... :done? ...}
                 {:kind :note :text ...}]
@@ -27,10 +27,14 @@
          (str/join ""))))
 
 (defn- images-of
+  "The URLs of the image blocks, after `pchat.looks/intern`."
   [content]
   (if (string? content)
-    0
-    (count (filter #(= "image" (:type %)) content))))
+    []
+    (into []
+          (comp (filter #(= "image" (:type %)))
+                (keep :url))
+          content)))
 
 (defn- last-index
   [items pred]

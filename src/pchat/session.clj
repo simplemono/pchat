@@ -38,10 +38,14 @@
          (str/join ""))))
 
 (defn- images-of
+  "The URLs of the image blocks, after `pchat.looks/intern`."
   [content]
   (if (string? content)
-    0
-    (count (filter #(= "image" (:type %)) content))))
+    []
+    (into []
+          (comp (filter #(= "image" (:type %)))
+                (keep :url))
+          content)))
 
 (defn- message-items
   "The items one message adds, in the order the live events would."
@@ -77,16 +81,21 @@
     items))
 
 (defn items
-  "The chat items of the message entries, in file order."
-  [entries]
-  (reduce (fn [items {:keys [type message]}]
-            (if (= "message" type)
-              (if (= "toolResult" (:role message))
-                (with-result items message)
-                (into items (message-items message)))
-              items))
-          []
-          entries))
+  "The chat items of the message entries, in file order. `intern` (a
+  function of a message, see `pchat.looks/intern-message`) replaces the
+  image bytes of a message by the stored file; the identity by default."
+  ([entries]
+   (items entries identity))
+  ([entries intern]
+   (reduce (fn [items {:keys [type message]}]
+             (if (= "message" type)
+               (let [message (intern message)]
+                 (if (= "toolResult" (:role message))
+                   (with-result items message)
+                   (into items (message-items message))))
+               items))
+           []
+           entries)))
 
 (defn cost
   [entries]
@@ -128,11 +137,14 @@
      :name (name-of items)}))
 
 (defn load-chat
-  "The chat value of a session file: its items and cost, idle."
-  [file]
-  (let [entries (entries file)]
-    (merge chat/empty-chat
-           (summary file)
-           {:items (items entries)
-            :cost (cost entries)
-            :loaded? true})))
+  "The chat value of a session file: its items and cost, idle. `intern`
+  as in `items`."
+  ([file]
+   (load-chat file identity))
+  ([file intern]
+   (let [entries (entries file)]
+     (merge chat/empty-chat
+            (summary file)
+            {:items (items entries intern)
+             :cost (cost entries)
+             :loaded? true}))))

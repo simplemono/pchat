@@ -16,6 +16,7 @@
             [org.httpkit.server :as server]
             [pchat.artifacts :as artifacts]
             [pchat.chat :as chat]
+            [pchat.looks :as looks]
             [pchat.pi :as pi]
             [pchat.session :as session]
             [pchat.view :as view]
@@ -54,6 +55,13 @@
   (artifacts/handle {:db db
                      :dir (io/file workspace "artifacts")}))
 
+(def looks-dir
+  (io/file workspace ".pchat" "looks"))
+
+(defn- intern-message
+  [message]
+  (looks/intern-message looks-dir message))
+
 (defn- now
   []
   (System/currentTimeMillis))
@@ -91,16 +99,18 @@
               (let [{:keys [loaded? file]} (get-in db [:chats id])]
                 (cond-> (assoc db :current id)
                   (and (not loaded?) file)
-                  (update-in [:chats id] merge (session/load-chat (io/file file))))))))
+                  (update-in [:chats id] merge (session/load-chat (io/file file) intern-message)))))))
 
 (defn- on-event
   [id event]
   (when (= "exited" (:type event))
     (swap! pis dissoc id))
-  (swap! db (fn [db]
-              (-> db
-                  (update-in [:chats id] chat/event event)
-                  (assoc-in [:chats id :updated] (now)))))
+  (let [event (cond-> event
+                (:message event) (update :message intern-message))]
+    (swap! db (fn [db]
+                (-> db
+                    (update-in [:chats id] chat/event event)
+                    (assoc-in [:chats id :updated] (now))))))
   ;; A tool just ran: what it wrote is on screen right away, the poll
   ;; catches the rest.
   (when (#{"tool_execution_end" "agent_settled"} (:type event))
@@ -135,14 +145,16 @@
 
 (defn- send-command
   [w]
-  (let [{:keys [text]} (command/command-data w)
+  (let [{:keys [text images]} (command/command-data w)
         text (str/trim (str text))
+        images (looks/blocks looks-dir (when (sequential? images)
+                                         (keep :name images)))
         id (:current @db)]
-    (if (str/blank? text)
+    (if (and (str/blank? text) (empty? images))
       (command/rejected w "Nothing to send.")
       (let [p (ensure-pi! id)
             streaming? (= :working (get-in @db [:chats id :status]))]
-        (pi/prompt! p text streaming?)
+        (pi/prompt! p (if (str/blank? text) "Look at this." text) streaming? images)
         (command/accepted w)))))
 
 (defn- abort-command
@@ -207,12 +219,15 @@
   []
   (replicant/expand (concat register
                             command/register
-                            (artifacts/register artifacts))))
+                            (artifacts/register artifacts)
+                            (looks/register {:db db
+                                             :looks-dir looks-dir}))))
 
 (defn -main
   [& _args]
   (.mkdirs sessions-dir)
   (.mkdirs (:dir artifacts))
+  (.mkdirs looks-dir)
   (load-chats!)
   (open! (:current @db))
   (artifacts/refresh! artifacts)

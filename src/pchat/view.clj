@@ -55,8 +55,12 @@
      [:div.label "You"]
      (when (seq text)
        [:p.text text])
-     (when (pos? (or images 0))
-       [:p.hint (str images (if (= 1 images) " image" " images"))])]
+     (when (seq images)
+       [:div.looks
+        (for [url images
+              :when url]
+          [:img {:src url
+                 :loading "lazy"}])])]
 
     :assistant
     (if handover?
