@@ -68,7 +68,7 @@
 
 (deftest page-test
   (let [chat (chat/fold chat/empty-chat events)
-        page (view/page {:chat chat} {})
+        page (view/page {:chats {"a" chat} :current "a"} {})
         feed (view/feed chat)
         items (filter #(and (vector? %) (keyword? (first %)) (clojure.string/starts-with? (name (first %)) "div.item"))
                       (tree-seq coll? seq feed))]

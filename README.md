@@ -65,10 +65,19 @@ bb test
 
 ## Status
 
-Milestone 1, done 2026-10-10: one chat on one pi process. `pchat.pi`
-spawns `pi --mode rpc` and reads its events, `pchat.chat` folds them into
-the chat as a value, `pchat.view` renders it with rchat's composer and
+Milestone 1, 2026-10-10: one chat on one pi process. `pchat.pi` spawns
+`pi --mode rpc` and reads its events, `pchat.chat` folds them into the
+chat as a value, `pchat.view` renders it with rchat's composer and
 stylesheet: streamed answers as markdown, tool calls as one collapsed row
 each ("Wrote a file"), the last answer of a run as the handover, Stop
-aborts. Next: the sidebar with many chats and their history from pi's
-session files, then the artifacts pane.
+aborts.
+
+Milestone 2, 2026-10-10: many chats. The sidebar lists pi's session files
+under `workspace/.pchat/sessions/`, newest first, named after their first
+message; opening one reads its history from the file (`pchat.session`),
+a new chat gets a fresh id, and the first message spawns its pi, which
+resumes the session file by that id after a restart. Each chat has its own
+pi process; the sidebar shows which ones are working.
+
+Next: the artifacts pane beside the chat, HTML, images, video and
+fnmotion designs with live reload.

@@ -1,7 +1,7 @@
 (ns pchat.view
-  "The page as a function of the app value: the header, the chat (feed
-  and composer). Classes follow rchat's stylesheet, which pchat ships as
-  its own."
+  "The page as a function of the app value: the sidebar with the chats,
+  the header, the current chat (feed and composer). Classes follow rchat's
+  stylesheet, which pchat ships as its own, plus pchat.css for the sidebar."
   (:require [clojure.string :as str]
             [pchat.chat :as chat]
             [rchat.feed :as feed]
@@ -47,7 +47,7 @@
          [:pre.output (feed/cut 2000 text)])))])
 
 (defn- item-view
-  [index {:keys [kind text images done? error handover?] :as item}]
+  [index {:keys [kind text images error handover?] :as item}]
   (case kind
     :user
     [:div.item.user {:replicant/key index}
@@ -112,10 +112,16 @@
       [:span.dot]
       [:span "Working"]])])
 
+(defn chat-name
+  [{:keys [name items]}]
+  (or name
+      (some #(when (= :user (:kind %)) (first (str/split-lines (:text %)))) items)
+      "New chat"))
+
 (defn header
-  [{:keys [status cost]}]
+  [{:keys [status cost] :as chat}]
   [:header.bar
-   [:h1 "pchat"]
+   [:h1 (chat-name chat)]
    [:span.status {:class (name status)}
     (case status
       :working "Working"
@@ -140,11 +146,31 @@
      [:button.stop {:on {:click [[:data/command {:command/kind :chat/abort}]]}}
       "Stop"])])
 
+(defn sidebar
+  [{:keys [chats current]}]
+  [:aside.sidebar
+   [:div.brand "pchat"]
+   [:button.new {:on {:click [[:data/command {:command/kind :chat/new}]]}}
+    "New chat"]
+   [:ul.chats
+    (for [{:keys [id status] :as chat} (sort-by #(or (:updated %) 0) > (vals chats))]
+      [:li {:replicant/key id
+            :class (str (when (= id current) "current")
+                        (when (= :working status) " working"))
+            :on {:click [[:data/command {:command/kind :chat/open
+                                         :command/data {:id id}}]]}}
+       [:span.name (chat-name chat)]
+       (when (= :working status)
+         [:span.dot])])]])
+
 (defn page
-  [{:keys [chat]} opts]
-  [:div.rchat
-   (header chat)
-   [:div.body
-    [:div.chat
-     (feed chat)
-     (composer chat opts)]]])
+  [{:keys [chats current] :as db} opts]
+  (let [chat (get chats current)]
+    [:div.pchat
+     (sidebar db)
+     [:div.rchat
+      (header chat)
+      [:div.body
+       [:div.chat
+        (feed chat)
+        (composer chat opts)]]]]))
