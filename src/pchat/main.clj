@@ -17,6 +17,7 @@
             [pchat.artifacts :as artifacts]
             [pchat.chat :as chat]
             [pchat.looks :as looks]
+            [pchat.motion :as motion]
             [pchat.pi :as pi]
             [pchat.session :as session]
             [pchat.view :as view]
@@ -185,9 +186,17 @@
           (command/accepted w))
       (command/rejected w "No such artifact."))))
 
+(defn- motion-pane
+  [artifact]
+  (motion/pane @db (:dir artifacts) artifact))
+
 (defn page-view
   [_w]
-  (view/page @db {:key-missing? key-missing?}))
+  ;; Playback belongs to the artifact on screen; the view reads the db
+  ;; after that is settled.
+  (motion/follow! db (:artifacts/current @db))
+  (view/page @db {:key-missing? key-missing?
+                  :motion motion-pane}))
 
 (def head
   (str "<title>pchat</title>"
@@ -221,7 +230,8 @@
                             command/register
                             (artifacts/register artifacts)
                             (looks/register {:db db
-                                             :looks-dir looks-dir}))))
+                                             :looks-dir looks-dir})
+                            (motion/commands db (:dir artifacts)))))
 
 (defn -main
   [& _args]

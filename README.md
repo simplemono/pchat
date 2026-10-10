@@ -94,5 +94,12 @@ back as pi's image blocks, and the thumbnails sit under the message, also
 after a restart: the base64 pi echoes and keeps in the session file is
 interned into the same file names (`pchat.looks`).
 
-Next: fnmotion designs as artifacts with a player and scrubber, then token
-auth and `bb deploy` to a sprite.
+Milestone 3b, 2026-10-10: motion designs. A Clojure file in `artifacts/`
+with `(def duration 6)`, `(def design {...})` and `(defn design-view
+[design t] ...)` plays in the pane: `pchat.motion` loads it into a
+namespace of its own (again when the file changes), renders the frame on
+the server for the time the scrubber or playback reaches and pushes it,
+sixty times a second while playing, as rchat's server-side mode does.
+fnmotion is at hand in the file as `fm`, `tl` and `captions`.
+
+Next: token auth and `bb deploy` to a sprite.

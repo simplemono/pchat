@@ -24,7 +24,7 @@
    "png" :image "jpg" :image "jpeg" :image "gif" :image "webp" :image "svg" :image
    "mp4" :video "webm" :video "mov" :video
    "mp3" :audio "wav" :audio "m4a" :audio "ogg" :audio
-   "clj" :motion "cljc" :motion "edn" :motion})
+   "clj" :motion "cljc" :motion})
 
 (defn kind
   [path]
@@ -120,7 +120,7 @@
   (str path-prefix "/" path "?rev=" mtime))
 
 (defn- content
-  [{:keys [path kind mtime] :as artifact}]
+  [{:keys [path kind mtime] :as artifact} {:keys [motion]}]
   (case kind
     :page [:ui/canvas {:ui/src (str path-prefix "/" path)
                        :ui/rev mtime}]
@@ -136,13 +136,18 @@
             [:audio {:replicant/key (str path mtime)
                      :src (src artifact)
                      :controls true}]]
-    :motion [:div.canvas-placeholder "Motion designs will play here soon."]
+    :motion (if motion
+              (motion artifact)
+              [:div.canvas-placeholder "Motion designs do not play here."])
     [:div.canvas-placeholder "There is no preview for this file. Download it from above."]))
 
 (defn view
   "The pane: a chooser over the artifacts, open and download links, the
-  current one shown by its kind."
-  [{files :artifacts/list current :artifacts/current}]
+  current one shown by its kind. `:motion` in `opts` is the function of a
+  motion artifact to its player, see `pchat.motion/pane`."
+  ([db]
+   (view db {}))
+  ([{files :artifacts/list current :artifacts/current} opts]
   (let [artifact (some #(when (= current (:path %)) %) files)]
     [:div.canvas-pane
      [:div.canvas-bar
@@ -163,5 +168,5 @@
                    :download (last (str/split (:path artifact) #"/"))}
           "Download"]))]
      (if artifact
-       (content artifact)
-       [:div.canvas-placeholder "What the agent makes for you appears here."])]))
+       (content artifact opts)
+       [:div.canvas-placeholder "What the agent makes for you appears here."])])))
