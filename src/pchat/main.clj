@@ -29,7 +29,9 @@
             [rframes.sse :as sse]))
 
 (def workspace
-  (io/file (or (System/getenv "PCHAT_WORKSPACE") "./workspace")))
+  ;; Absolute: pi and the artifact projects run inside it and resolve
+  ;; relative paths against their own directory.
+  (.getAbsoluteFile (io/file (or (System/getenv "PCHAT_WORKSPACE") "./workspace"))))
 
 (def sessions-dir
   (io/file workspace ".pchat" "sessions"))

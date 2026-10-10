@@ -18,7 +18,8 @@
            ;; are a developer's, not this chat's.
            "--approve" "--no-extensions" "--no-skills" "--no-prompt-templates"
            "--no-themes" "--no-context-files"
-           "--session-dir" (str session-dir)
+           ;; Absolute: pi resolves it against its own working directory.
+           "--session-dir" (.getAbsolutePath (io/file (str session-dir)))
            "--session-id" (str session-id)]
     provider (into ["--provider" provider])
     model (into ["--model" model])
