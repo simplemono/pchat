@@ -1,6 +1,10 @@
 ;; bb start    the chat at http://localhost:8080 (pi on the PATH, OPENROUTER_API_KEY set)
 ;; bb build    the browser bundle (needs a JVM)
 ;; bb test     the tests
+;; bb jar      the app as one uberjar for babashka, target/pchat.jar
+;; bb deploy <sprite>   the jar as a service on a sprites.dev sprite
+;;
+;; This file is EDN: no #(...) and no #"..." in here.
 {:paths ["src" "resources" "test"]
  :deps {io.github.simplemono/rframes$server
         {:git/url "https://github.com/simplemono/rframes.git"
@@ -56,4 +60,53 @@
    :task (do
            (when (stale?)
              (run 'build))
-           (shell {:extra-env (env-file)} "bb" "-m" "pchat.main"))}}}
+           (shell {:extra-env (env-file)} "bb" "-m" "pchat.main"))}
+
+  jar
+  {:doc "The app and all its dependencies as target/pchat.jar, run with `bb target/pchat.jar`. Compiles the bundle first when stale."
+   :task (do
+           (when (stale?)
+             (run 'build))
+           (fs/create-dirs "target")
+           (shell "bb" "uberjar" "target/pchat.jar" "-m" "pchat.main")
+           (println (str "target/pchat.jar, " (quot (fs/size "target/pchat.jar") 1024) " kB")))}
+
+  deploy
+  {:doc "bb deploy <sprite>: the jar as the service `pchat` behind the sprite's URL. First time: installs babashka and pi, pushes deploy/start.sh and the local .env plus a PCHAT_TOKEN (never over an .env on the sprite), warms the dependency cache of the artifact projects."
+   :task (let [sprite (or (first *command-line-args*)
+                          (do (println "Which sprite? bb deploy <name>")
+                              (System/exit 1)))
+                remote (fn [script]
+                         (str/trim (:out (shell {:out :string} "sprite" "exec" "-s" sprite "--" "bash" "-c" script))))
+                push (fn [local remote-path]
+                       (shell "sprite" "file" "push" "-s" sprite local remote-path))]
+            (run 'jar)
+            (println "Preparing" sprite)
+            (remote "mkdir -p ~/pchat/workspace ~/.local/bin; if [ ! -x ~/.local/bin/bb ]; then cd ~ && curl -sLO https://raw.githubusercontent.com/babashka/babashka/master/install && chmod +x install && ./install --dir ~/.local/bin >/dev/null && rm -f install; fi; ~/.local/bin/bb --version; if [ ! -x ~/.local/bin/pi ]; then npm install -g --prefix ~/.local @earendil-works/pi-coding-agent@0.85.1 >/dev/null 2>&1; fi; echo pi $(~/.local/bin/pi --version)")
+            (push "deploy/start.sh" "/home/sprite/pchat/start.sh")
+            (remote "chmod 700 ~/pchat/start.sh")
+            (cond
+              (= "yes" (remote "test -f ~/pchat/.env && echo yes || echo no"))
+              (println "The sprite has its .env, kept.")
+
+              (fs/exists? ".env")
+              (do (push ".env" "/home/sprite/pchat/.env")
+                  (remote "chmod 600 ~/pchat/.env; grep -q '^PCHAT_TOKEN=' ~/pchat/.env || echo PCHAT_TOKEN=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \\n') >> ~/pchat/.env")
+                  (println "Pushed the local .env and added a PCHAT_TOKEN."))
+
+              :else
+              (println "No .env here or on the sprite: the agent starts without an API key. Put OPENROUTER_API_KEY=... into /home/sprite/pchat/.env on the sprite."))
+            (push "target/pchat.jar" "/home/sprite/pchat/pchat.jar")
+            (if (str/includes? (remote "sprite-env services list") "\"name\":\"pchat\"")
+              (do (remote "sprite-env services restart pchat")
+                  (println "Restarted the service pchat."))
+              (do (remote "sprite-env services create pchat --cmd /home/sprite/pchat/start.sh --dir /home/sprite/pchat --http-port 8080 --no-stream")
+                  (println "Created the service pchat.")))
+            (println (remote "sleep 3; curl -s -o /dev/null -w 'The page answers %{http_code} on the sprite. ' http://127.0.0.1:8080/; tail -1 /.sprite/logs/services/pchat.log"))
+            (println "Warming the dependency cache of the artifact projects (first time takes a minute).")
+            (println (remote "export PATH=/home/sprite/.local/bin:/.sprite/bin:$PATH; cd ~/pchat/workspace/.pchat/template/motion && bb -e '(println \"The artifact projects are ready.\")' 2>&1 | tail -1"))
+            (let [token (remote "grep '^PCHAT_TOKEN=' ~/pchat/.env | cut -d= -f2")
+                  url (->> (str/split-lines (:out (shell {:out :string} "sprite" "info" "-s" sprite)))
+                           (keep (fn [line] (second (re-find (re-pattern "^URL:\\s+(\\S+)") line))))
+                           (first))]
+              (println (str "The link: " url "/?token=" token))))}}}

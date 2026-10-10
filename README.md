@@ -63,6 +63,22 @@ bb test
 `PCHAT_MODEL` and `PCHAT_PROVIDER` the model (default
 `openai/gpt-6.1-sol` on `openrouter`).
 
+### On a sprite
+
+```bash
+sprite create <name>      # once, a sprites.dev sprite (Node and a JDK come with it)
+bb deploy <name>          # the jar as the service `pchat` on the sprite, prints the link
+sprite config update --url-auth public -s <name>   # the page behind the token link only
+```
+
+The first deploy installs babashka and pi under `~/.local/bin` on the
+sprite, pushes `deploy/start.sh` and the local `.env` with a generated
+`PCHAT_TOKEN` (an `.env` already on the sprite is kept), and warms the
+dependency cache of the artifact projects. Every deploy after that
+pushes the jar and restarts the service, about twenty seconds. The
+workspace lives in `/home/sprite/pchat/workspace`, the log in
+`/.sprite/logs/services/pchat.log`.
+
 ## Status
 
 Milestone 1, 2026-10-10: one chat on one pi process. `pchat.pi` spawns
@@ -109,4 +125,9 @@ while the person watches; pchat's own process never evaluates the
 agent's code. A HyperFrames project can take the same slot: a directory,
 a port, a page.
 
-Next: token auth and `bb deploy` to a sprite.
+**Milestone 4, a sprite.** `bb jar` bundles the app for babashka,
+`bb deploy <sprite>` runs it as a service on a sprite behind the token
+link. The artifact projects run there as well: the JDK and git of the
+sprite resolve their dependencies once, then they start in seconds.
+
+Next: automations (a webhook per chat runs a script the agent wrote).

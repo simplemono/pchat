@@ -7,4 +7,4 @@
          :deps/root "server"}
         io.github.simplemono/fnmotion
         {:git/url "https://github.com/simplemono/fnmotion.git"
-         :git/sha "592c18fca0e28a4dd901f55f7c2c423e296cbcc4"}}}
+         :git/sha "451a9a0a39d6dee66c17be98aba358afa3e7554a"}}}
