@@ -1,0 +1,59 @@
+;; bb start    the chat at http://localhost:8080 (pi on the PATH, OPENROUTER_API_KEY set)
+;; bb build    the browser bundle (needs a JVM)
+;; bb test     the tests
+{:paths ["src" "resources" "test"]
+ :deps {io.github.simplemono/rframes$server
+        {:git/url "https://github.com/simplemono/rframes.git"
+         :git/sha "986826428665e0ee6d9de6affeb1dcb266b670c1"
+         :deps/root "server"}
+        io.github.simplemono/rchat$server
+        {:git/url "https://github.com/simplemono/rchat.git"
+         :git/sha "09808fed4ef2f6dc3848fda8c3b313291ddd652c"
+         :deps/root "server"}}
+ :tasks
+ {:requires ([babashka.fs :as fs]
+             [babashka.process :refer [shell]]
+             [clojure.string :as str])
+
+  :init
+  (do
+    (def bundle "resources/public/js/main.js")
+
+    (defn mtime
+      [path]
+      (fs/file-time->millis (fs/last-modified-time path)))
+
+    (defn stale?
+      []
+      (or (not (fs/exists? bundle))
+          (< (mtime bundle)
+             (->> (concat (fs/glob "src" "**.cljs") ["deps.edn" "shadow-cljs.edn"])
+                  (filter fs/exists?)
+                  (map mtime)
+                  (reduce max 0)))))
+
+    (defn env-file
+      []
+      (into {}
+            (for [file [".env"]
+                  :when (fs/exists? file)
+                  line (str/split-lines (slurp file))
+                  :let [line (str/trim (str/replace line (re-pattern "^export\\s+") ""))]
+                  :when (and (seq line) (not (str/starts-with? line "#")) (str/includes? line "="))
+                  :let [[k v] (str/split line (re-pattern "=") 2)]]
+              [(str/trim k) (str/replace (str/trim v) (re-pattern "^[\"']|[\"']$") "")]))))
+
+  test
+  {:doc "Runs the tests."
+   :task (shell "bb" "tests.clj")}
+
+  build
+  {:doc "Compiles the browser bundle (needs a JVM and the clojure CLI)."
+   :task (shell "clojure -M -m shadow.cljs.devtools.cli release browser")}
+
+  start
+  {:doc "The chat at http://localhost:8080. Compiles the bundle first when missing or stale, reads .env."
+   :task (do
+           (when (stale?)
+             (run 'build))
+           (shell {:extra-env (env-file)} "bb" "-m" "pchat.main"))}}}

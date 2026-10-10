@@ -48,7 +48,27 @@ MIT. Storrito-specific parts are fine here, customer-specific ones are not.
 10. **Never on screen:** tool calls collapse to one row, no paths, no
     terminal, artifacts have names. One download per artifact.
 
+## Run it
+
+```bash
+echo 'OPENROUTER_API_KEY=...' > .env   # once
+bb start                             # http://localhost:8080, compiles the bundle first (JVM)
+bb test
+```
+
+`pi` must be on the PATH ([pi-mono](https://github.com/earendil-works/pi-mono),
+`npm i -g @earendil-works/pi-coding-agent`). The agent works in
+`./workspace` (`PCHAT_WORKSPACE`), its sessions under `workspace/.pchat/`.
+`PCHAT_TOKEN` puts the page behind a secret link, `PORT` picks the port,
+`PCHAT_MODEL` and `PCHAT_PROVIDER` the model (default
+`openai/gpt-6.1-sol` on `openrouter`).
+
 ## Status
 
-Nothing runs yet. Milestone 1: a babashka process that drives pi over
-rpc and shows one chat with rframes.
+Milestone 1, done 2026-10-10: one chat on one pi process. `pchat.pi`
+spawns `pi --mode rpc` and reads its events, `pchat.chat` folds them into
+the chat as a value, `pchat.view` renders it with rchat's composer and
+stylesheet: streamed answers as markdown, tool calls as one collapsed row
+each ("Wrote a file"), the last answer of a run as the handover, Stop
+aborts. Next: the sidebar with many chats and their history from pi's
+session files, then the artifacts pane.

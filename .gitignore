@@ -1,0 +1,9 @@
+.cpcache/
+.shadow-cljs/
+.clj-kondo/
+.lsp/
+node_modules/
+target/
+resources/public/js/
+workspace/
+.env
