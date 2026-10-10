@@ -1,0 +1,10 @@
+;; This artifact is a small babashka app of its own: pchat starts it with
+;; `bb -m artifact.main`, PORT and NREPL_PORT set, and shows its page.
+{:paths ["src"]
+ :deps {io.github.simplemono/rframes$server
+        {:git/url "https://github.com/simplemono/rframes.git"
+         :git/sha "a0812c6a7506d4986214e9aaa80ffa03f521867c"
+         :deps/root "server"}
+        io.github.simplemono/fnmotion
+        {:git/url "https://github.com/simplemono/fnmotion.git"
+         :git/sha "592c18fca0e28a4dd901f55f7c2c423e296cbcc4"}}}

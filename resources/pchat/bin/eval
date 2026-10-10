@@ -1,0 +1,43 @@
+#!/usr/bin/env bb
+;; bin/eval <artifact> '<forms>'   evaluates the forms in the running
+;; process of the artifact, in its artifact.main namespace, and prints
+;; what it printed, the value, errors.
+(require '[bencode.core :as bencode]
+         '[clojure.java.io :as io])
+
+(defn text
+  [value]
+  (when value
+    (String. ^bytes value "UTF-8")))
+
+(let [[name code] *command-line-args*
+      port-file (io/file "artifacts" (str name) ".nrepl-port")]
+  (when (or (nil? code) (not (.isFile port-file)))
+    (println (if code
+               (str "artifacts/" name " is not running (no .nrepl-port). pchat starts every artifact project; wait a moment or look at artifacts/" name "/.log.")
+               "bin/eval <artifact> '<forms>'"))
+    (System/exit 1))
+  (with-open [socket (java.net.Socket. "127.0.0.1" (int (parse-long (slurp port-file))))]
+    (.setSoTimeout socket 60000)
+    (let [out (java.io.BufferedOutputStream. (.getOutputStream socket))
+          in (java.io.PushbackInputStream. (.getInputStream socket))]
+      (bencode/write-bencode out {"op" "eval" "code" code "ns" "artifact.main" "id" "1"})
+      (.flush out)
+      (loop []
+        (let [message (bencode/read-bencode in)]
+          (some-> (get message "out") text print)
+          (some-> (get message "err") text print)
+          (when-let [value (get message "value")]
+            (println (str "=> " (text value))))
+          (when-let [ex (get message "ex")]
+            (println (str "Error: " (text ex))))
+          (when-not (some #(= "done" (text %)) (get message "status"))
+            (recur))))
+      ;; A redefinition changes no data, so the page would wait for the
+      ;; next interaction: push a frame now.
+      (bencode/write-bencode out {"op" "eval" "code" "(rframes.sse/refresh-all!)" "id" "2"})
+      (.flush out)
+      (loop []
+        (let [message (bencode/read-bencode in)]
+          (when-not (some #(= "done" (text %)) (get message "status"))
+            (recur)))))))

@@ -21,7 +21,7 @@
   (is (= :page (artifacts/kind "guest-review_card.html")))
   (is (= :image (artifacts/kind "photos/Pool.JPG")))
   (is (= :video (artifacts/kind "story.mp4")))
-  (is (= :motion (artifacts/kind "review-story.clj")))
+  (is (= :file (artifacts/kind "review-story.clj")))
   (is (= :file (artifacts/kind "notes")))
   (is (= "Guest review card" (artifacts/title "guest-review_card.html")))
   (is (= "Pool" (artifacts/title "photos/Pool.JPG"))))
@@ -48,6 +48,16 @@
       (touch! dir "story.mp4" (+ (System/currentTimeMillis) 5000))
       (artifacts/refresh! handle)
       (is (= "story.mp4" (:artifacts/current @db))))
+    (testing "a directory with a bb.edn is one artifact, a project, timed by its newest file"
+      (touch! dir "clip/bb.edn" 100)
+      (touch! dir "clip/src/artifact/main.clj" 7000)
+      (touch! dir "clip/.log" 9000)
+      (artifacts/refresh! handle)
+      (let [files (:artifacts/list @db)
+            clip (some #(when (= "clip" (:path %)) %) files)]
+        (is (= {:path "clip" :kind :project :title "Clip" :mtime 7000} (dissoc clip :size)))
+        (is (not-any? #(clojure.string/starts-with? (:path %) "clip/") files))
+        (is (= "story.mp4" (:path (first files))) "the file from the future stays newest")))
     (testing "a pick that disappeared falls back to the newest"
       (artifacts/pick! handle "first.html")
       (.delete (io/file dir "first.html"))
@@ -72,5 +82,13 @@
     (testing "an image and a video are shown as themselves"
       (is (some #{:img} (tags (artifacts/view {:artifacts/list list :artifacts/current "pool.png"}))))
       (is (some #{:video} (tags (artifacts/view {:artifacts/list list :artifacts/current "story.mp4"})))))
+    (testing "a project is the iframe once its process answers, a notice before"
+      (let [project {:path "clip" :kind :project :title "Clip" :mtime 9}
+            view (fn [state] (artifacts/view {:artifacts/list [project] :artifacts/current "clip"}
+                                             {:project (constantly state)}))]
+        (is (some #{:div.canvas-placeholder} (tags (view {:ready-at nil}))))
+        (is (some #{:ui/canvas} (tags (view {:ready-at 5}))))
+        (is (some #{:p.error} (tags (view {:ready-at 5 :reload {:file "x.clj" :error "boom"}}))))
+        (is (some #{:div.canvas-placeholder} (tags (view {:exit 1}))))))
     (testing "nothing yet"
       (is (some #{:div.canvas-placeholder} (tags (artifacts/view {})))))))

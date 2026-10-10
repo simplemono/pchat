@@ -1,0 +1,20 @@
+#!/usr/bin/env bb
+;; bin/new <name>   a new artifact project from the motion template
+(require '[babashka.fs :as fs]
+         '[clojure.string :as str])
+
+(let [[name] *command-line-args*
+      template (fs/path ".pchat" "template" "motion")
+      target (fs/path "artifacts" name)]
+  (cond
+    (or (str/blank? name) (not (re-matches #"[a-z0-9][a-z0-9-]*" name)))
+    (do (println "bin/new <name>: lowercase letters, digits and dashes.")
+        (System/exit 1))
+
+    (fs/exists? target)
+    (do (println (str "artifacts/" name " exists already."))
+        (System/exit 1))
+
+    :else
+    (do (fs/copy-tree template target)
+        (println (str "artifacts/" name "/ is ready: src/artifact/main.clj has design-view and controls, design.edn the data.")))))

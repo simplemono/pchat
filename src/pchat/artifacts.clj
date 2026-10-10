@@ -6,6 +6,9 @@
   change the agent makes becomes the one on screen, unless the user picked
   another one since.
 
+  A directory with a bb.edn is a project, an artifact with a process of
+  its own whose page is shown through pchat.projects.
+
   The db keys this namespace owns:
 
       :artifacts/list       [{:path :kind :title :mtime :size} ...], newest first
@@ -23,8 +26,7 @@
   {"html" :page "htm" :page
    "png" :image "jpg" :image "jpeg" :image "gif" :image "webp" :image "svg" :image
    "mp4" :video "webm" :video "mov" :video
-   "mp3" :audio "wav" :audio "m4a" :audio "ogg" :audio
-   "clj" :motion "cljc" :motion})
+   "mp3" :audio "wav" :audio "m4a" :audio "ogg" :audio})
 
 (defn kind
   [path]
@@ -48,23 +50,54 @@
   [relative]
   (boolean (some #(str/starts-with? % ".") (str/split relative #"/"))))
 
+(defn- project?
+  "A directory with a bb.edn is an artifact with a process of its own,
+  see pchat.projects."
+  [dir]
+  (.isFile (io/file dir "bb.edn")))
+
+(defn- newest-mtime
+  "The newest file of the project; the directory's own time only when it
+  has none."
+  [dir]
+  (let [times (->> (file-seq (io/file dir))
+                   (filter #(.isFile %))
+                   (remove #(str/starts-with? (.getName %) "."))
+                   (map #(.lastModified %)))]
+    (if (seq times)
+      (reduce max times)
+      (.lastModified (io/file dir)))))
+
 (defn list-files
-  "The artifacts of the directory, newest first."
+  "The artifacts of the directory, newest first: the files, and a project
+  directory as one artifact whose time is its newest file's."
   [dir]
   (let [dir (io/file dir)]
     (if (.isDirectory dir)
-      (->> (file-seq dir)
-           (filter #(.isFile %))
-           (map (fn [file]
-                  (let [relative (str (.relativize (.toPath dir) (.toPath file)))]
-                    {:path relative
-                     :kind (kind relative)
-                     :title (title relative)
-                     :mtime (.lastModified file)
-                     :size (.length file)})))
-           (remove #(hidden? (:path %)))
-           (sort-by :mtime >)
-           (vec))
+      (let [projects (->> (.listFiles dir)
+                          (filter #(and (.isDirectory %) (project? %)))
+                          (remove #(str/starts-with? (.getName %) "."))
+                          (map (fn [project]
+                                 {:path (.getName project)
+                                  :kind :project
+                                  :title (title (.getName project))
+                                  :mtime (newest-mtime project)
+                                  :size 0})))
+            project-names (set (map :path projects))
+            files (->> (file-seq dir)
+                       (filter #(.isFile %))
+                       (map (fn [file]
+                              (let [relative (str (.relativize (.toPath dir) (.toPath file)))]
+                                {:path relative
+                                 :kind (kind relative)
+                                 :title (title relative)
+                                 :mtime (.lastModified file)
+                                 :size (.length file)})))
+                       (remove #(hidden? (:path %)))
+                       (remove #(project-names (first (str/split (:path %) #"/")))))]
+        (->> (concat projects files)
+             (sort-by :mtime >)
+             (vec)))
       [])))
 
 (defn handle
@@ -120,7 +153,7 @@
   (str path-prefix "/" path "?rev=" mtime))
 
 (defn- content
-  [{:keys [path kind mtime] :as artifact} {:keys [motion]}]
+  [{:keys [path kind mtime] :as artifact} {:keys [project]}]
   (case kind
     :page [:ui/canvas {:ui/src (str path-prefix "/" path)
                        :ui/rev mtime}]
@@ -136,15 +169,22 @@
             [:audio {:replicant/key (str path mtime)
                      :src (src artifact)
                      :controls true}]]
-    :motion (if motion
-              (motion artifact)
-              [:div.canvas-placeholder "Motion designs do not play here."])
+    :project (let [{:keys [ready-at exit reload]} (when project (project artifact))]
+               (cond
+                 exit [:div.canvas-placeholder
+                       (str "This artifact's process stopped (exit " exit "). Its .log says why; pchat starts it again.")]
+                 ready-at (list
+                           (when (:error reload)
+                             [:p.error (str "Loading " (:file reload) " failed: " (:error reload))])
+                           [:ui/canvas {:ui/src (str path-prefix "/" path "/")
+                                        :ui/rev ready-at}])
+                 :else [:div.canvas-placeholder "Starting this artifact …"]))
     [:div.canvas-placeholder "There is no preview for this file. Download it from above."]))
 
 (defn view
   "The pane: a chooser over the artifacts, open and download links, the
-  current one shown by its kind. `:motion` in `opts` is the function of a
-  motion artifact to its player, see `pchat.motion/pane`."
+  current one shown by its kind. `:project` in `opts` is the function of a
+  project artifact to its state, see `pchat.projects`."
   ([db]
    (view db {}))
   ([{files :artifacts/list current :artifacts/current} opts]
@@ -159,14 +199,19 @@
          (for [{:keys [path title]} files]
            [:option {:value path} title])])
       (when artifact
-        (list
-         [:a.link {:href (src artifact)
-                   :target "_blank"
-                   :rel "noopener"}
-          "Open"]
-         [:a.link {:href (src artifact)
-                   :download (last (str/split (:path artifact) #"/"))}
-          "Download"]))]
+        (if (= :project (:kind artifact))
+          [:a.link {:href (str path-prefix "/" (:path artifact) "/")
+                    :target "_blank"
+                    :rel "noopener"}
+           "Open"]
+          (list
+           [:a.link {:href (src artifact)
+                     :target "_blank"
+                     :rel "noopener"}
+            "Open"]
+           [:a.link {:href (src artifact)
+                     :download (last (str/split (:path artifact) #"/"))}
+            "Download"])))]
      (if artifact
        (content artifact opts)
        [:div.canvas-placeholder "What the agent makes for you appears here."])])))

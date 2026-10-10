@@ -6,6 +6,7 @@
       PCHAT_PROVIDER   default openrouter (OPENROUTER_API_KEY in the environment)
       PCHAT_MODEL      default openai/gpt-6.1-sol
       PCHAT_TOKEN      a secret: the page is behind the link that sets the cookie
+      BB               the babashka executable for the artifact projects, default bb
 
   The app value: {:chats {id chat} :current id}. A chat is the value of
   `pchat.chat` plus :id, :name, :created, :updated, :file and :loaded?;
@@ -17,8 +18,8 @@
             [pchat.artifacts :as artifacts]
             [pchat.chat :as chat]
             [pchat.looks :as looks]
-            [pchat.motion :as motion]
             [pchat.pi :as pi]
+            [pchat.projects :as projects]
             [pchat.session :as session]
             [pchat.view :as view]
             [rchat.auth :as auth]
@@ -58,6 +59,47 @@
 
 (def looks-dir
   (io/file workspace ".pchat" "looks"))
+
+(def projects
+  (projects/handle {:db db
+                    :dir (io/file workspace "artifacts")
+                    :bb (or (System/getenv "BB") "bb")}))
+
+(def template-files
+  "The motion project template and the scripts, copied into the
+  workspace at start: .pchat/template/motion/ and bin/."
+  ["template/motion/bb.edn"
+   "template/motion/design.edn"
+   "template/motion/README.md"
+   "template/motion/src/artifact/main.clj"
+   "bin/new"
+   "bin/eval"])
+
+(defn- install-workspace!
+  "The template and the scripts the agent uses, always the ones of this
+  build."
+  []
+  (doseq [path template-files]
+    (let [target (if (str/starts-with? path "bin/")
+                   (io/file workspace path)
+                   (io/file workspace ".pchat" path))]
+      (io/make-parents target)
+      (spit target (slurp (io/resource (str "pchat/" path))))
+      (when (str/starts-with? path "bin/")
+        (.setExecutable target true false)))))
+
+(defn- sync-projects!
+  "Starts, watches and reloads the artifact projects, once a second."
+  []
+  (future
+    (loop []
+      (try
+        (projects/sync! projects)
+        (catch Exception e
+          (binding [*out* *err*]
+            (println "[projects]" (str e)))))
+      (Thread/sleep 1000)
+      (recur))))
 
 (defn- intern-message
   [message]
@@ -186,17 +228,12 @@
           (command/accepted w))
       (command/rejected w "No such artifact."))))
 
-(defn- motion-pane
-  [artifact]
-  (motion/pane @db (:dir artifacts) artifact))
-
 (defn page-view
   [_w]
-  ;; Playback belongs to the artifact on screen; the view reads the db
-  ;; after that is settled.
-  (motion/follow! db (:artifacts/current @db))
-  (view/page @db {:key-missing? key-missing?
-                  :motion motion-pane}))
+  (let [value @db]
+    (view/page value {:key-missing? key-missing?
+                      :project (fn [{:keys [path]}]
+                                 (get-in value [:projects path]))})))
 
 (def head
   (str "<title>pchat</title>"
@@ -226,22 +263,27 @@
 
 (defn get-register
   []
+  ;; The project proxy before the files: it answers only for a running
+  ;; project, the files route takes the rest.
   (replicant/expand (concat register
                             command/register
+                            (projects/register projects)
                             (artifacts/register artifacts)
                             (looks/register {:db db
-                                             :looks-dir looks-dir})
-                            (motion/commands db (:dir artifacts)))))
+                                             :looks-dir looks-dir}))))
 
 (defn -main
   [& _args]
   (.mkdirs sessions-dir)
   (.mkdirs (:dir artifacts))
   (.mkdirs looks-dir)
+  (install-workspace!)
   (load-chats!)
   (open! (:current @db))
   (artifacts/refresh! artifacts)
   (poll-artifacts!)
+  (sync-projects!)
+  (.addShutdownHook (Runtime/getRuntime) (Thread. #(projects/stop-all! projects)))
   (sse/watch! db)
   (let [port (parse-long (or (System/getenv "PORT") "8080"))
         token (System/getenv "PCHAT_TOKEN")]

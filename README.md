@@ -94,12 +94,19 @@ back as pi's image blocks, and the thumbnails sit under the message, also
 after a restart: the base64 pi echoes and keeps in the session file is
 interned into the same file names (`pchat.looks`).
 
-Milestone 3b, 2026-10-10: motion designs. A Clojure file in `artifacts/`
-with `(def duration 6)`, `(def design {...})` and `(defn design-view
-[design t] ...)` plays in the pane: `pchat.motion` loads it into a
-namespace of its own (again when the file changes), renders the frame on
-the server for the time the scrubber or playback reaches and pushes it,
-sixty times a second while playing, as rchat's server-side mode does.
-fnmotion is at hand in the file as `fm`, `tl` and `captions`.
+Milestone 3b, 2026-10-10, redone the same day: motion designs as
+artifact projects. A directory under `artifacts/` with a `bb.edn` is an
+artifact with a process of its own: pchat starts it (`pchat.projects`),
+proxies its page under `/artifacts/<name>/` into the live iframe, reloads
+a source file into it over nREPL when the file changes, restarts it when
+it dies, and writes its output to `.log`. The template
+(`bin/new <name>` in the workspace) is a small rframes app with
+[fnmotion](https://github.com/simplemono/fnmotion) and its server-side
+player `fnmotion.rframes`: `design-view` as the frame at a time,
+`controls` over the design data, `design.edn` across restarts. The agent
+works on it like at a REPL, `bin/eval <name> '(defn design-view …)'`,
+while the person watches; pchat's own process never evaluates the
+agent's code. A HyperFrames project can take the same slot: a directory,
+a port, a page.
 
 Next: token auth and `bb deploy` to a sprite.

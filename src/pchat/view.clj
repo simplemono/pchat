@@ -169,7 +169,7 @@
          [:span.dot])])]])
 
 (defn page
-  "`opts`: `:key-missing?` and `:motion` (see `pchat.artifacts/view`)."
+  "`opts`: `:key-missing?` and `:project` (see `pchat.artifacts/view`)."
   [{:keys [chats current artifacts/list] :as db} opts]
   (let [chat (get chats current)
         card? (seq list)]
@@ -182,4 +182,4 @@
         (feed chat)
         (composer chat opts)]
        (when card?
-         [:section.card (artifacts/view db (select-keys opts [:motion]))])]]]))
+         [:section.card (artifacts/view db (select-keys opts [:project]))])]]]))

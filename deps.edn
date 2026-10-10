@@ -4,4 +4,10 @@
         io.github.simplemono/rchat$client
         {:git/url "https://github.com/simplemono/rchat.git"
          :git/sha "09808fed4ef2f6dc3848fda8c3b313291ddd652c"
+         :deps/root "client"}
+        ;; Newer than rchat's pin: commands post next to the page, which
+        ;; the artifact projects behind /artifacts/<name>/ need.
+        io.github.simplemono/rframes$client
+        {:git/url "https://github.com/simplemono/rframes.git"
+         :git/sha "a0812c6a7506d4986214e9aaa80ffa03f521867c"
          :deps/root "client"}}}
