@@ -14,6 +14,7 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [org.httpkit.server :as server]
+            [pchat.artifacts :as artifacts]
             [pchat.chat :as chat]
             [pchat.pi :as pi]
             [pchat.session :as session]
@@ -48,6 +49,10 @@
 ;; one per chat id.
 (defonce pis
   (atom {}))
+
+(def artifacts
+  (artifacts/handle {:db db
+                     :dir (io/file workspace "artifacts")}))
 
 (defn- now
   []
@@ -95,7 +100,25 @@
   (swap! db (fn [db]
               (-> db
                   (update-in [:chats id] chat/event event)
-                  (assoc-in [:chats id :updated] (now))))))
+                  (assoc-in [:chats id :updated] (now)))))
+  ;; A tool just ran: what it wrote is on screen right away, the poll
+  ;; catches the rest.
+  (when (#{"tool_execution_end" "agent_settled"} (:type event))
+    (artifacts/refresh! artifacts)))
+
+(defn- poll-artifacts!
+  "Looks at the artifacts folder twice a second: the agent writes with
+  tools, but a command can write files too."
+  []
+  (future
+    (loop []
+      (Thread/sleep 500)
+      (try
+        (artifacts/refresh! artifacts)
+        (catch Exception e
+          (binding [*out* *err*]
+            (println "[artifacts]" (str e)))))
+      (recur))))
 
 (defn- ensure-pi!
   [id]
@@ -142,6 +165,14 @@
           (command/accepted w))
       (command/rejected w "No such chat."))))
 
+(defn- open-artifact-command
+  [w]
+  (let [{:keys [path]} (command/command-data w)]
+    (if (some #(= path (:path %)) (:artifacts/list @db))
+      (do (artifacts/pick! artifacts path)
+          (command/accepted w))
+      (command/rejected w "No such artifact."))))
+
 (defn page-view
   [_w]
   (view/page @db {:key-missing? key-missing?}))
@@ -168,17 +199,24 @@
    {:command/kind :chat/new
     :command/fn #'new-command}
    {:command/kind :chat/open
-    :command/fn #'open-command}])
+    :command/fn #'open-command}
+   {:command/kind :artifacts/open
+    :command/fn #'open-artifact-command}])
 
 (defn get-register
   []
-  (replicant/expand (concat register command/register)))
+  (replicant/expand (concat register
+                            command/register
+                            (artifacts/register artifacts))))
 
 (defn -main
   [& _args]
   (.mkdirs sessions-dir)
+  (.mkdirs (:dir artifacts))
   (load-chats!)
   (open! (:current @db))
+  (artifacts/refresh! artifacts)
+  (poll-artifacts!)
   (sse/watch! db)
   (let [port (parse-long (or (System/getenv "PORT") "8080"))
         token (System/getenv "PCHAT_TOKEN")]

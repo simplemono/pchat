@@ -3,6 +3,7 @@
   the header, the current chat (feed and composer). Classes follow rchat's
   stylesheet, which pchat ships as its own, plus pchat.css for the sidebar."
   (:require [clojure.string :as str]
+            [pchat.artifacts :as artifacts]
             [pchat.chat :as chat]
             [rchat.feed :as feed]
             [rchat.markdown :as markdown]))
@@ -164,13 +165,16 @@
          [:span.dot])])]])
 
 (defn page
-  [{:keys [chats current] :as db} opts]
-  (let [chat (get chats current)]
+  [{:keys [chats current artifacts/list] :as db} opts]
+  (let [chat (get chats current)
+        card? (seq list)]
     [:div.pchat
      (sidebar db)
-     [:div.rchat
+     [:div.rchat {:class (when card? "with-card")}
       (header chat)
       [:div.body
        [:div.chat
         (feed chat)
-        (composer chat opts)]]]]))
+        (composer chat opts)]
+       (when card?
+         [:section.card (artifacts/view db)])]]]))

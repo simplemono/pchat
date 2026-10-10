@@ -79,5 +79,13 @@ a new chat gets a fresh id, and the first message spawns its pi, which
 resumes the session file by that id after a restart. Each chat has its own
 pi process; the sidebar shows which ones are working.
 
-Next: the artifacts pane beside the chat, HTML, images, video and
-fnmotion designs with live reload.
+Milestone 3a, 2026-10-10: the artifacts pane. The files under
+`workspace/artifacts/` appear beside the chat (`pchat.artifacts`): a page
+in an iframe that reloads when its file changes, an image, a video or an
+audio file as themselves, anything else as a download, a chooser over all
+of them. The newest thing the agent wrote takes the pane, a pick of the
+user holds until the agent writes something newer. The folder is read
+after every tool call and twice a second.
+
+Next: fnmotion designs as artifacts with a player and scrubber, then token
+auth and `bb deploy` to a sprite.
