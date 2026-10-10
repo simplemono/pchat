@@ -61,7 +61,10 @@
                             :err log
                             :extra-env {"PORT" (str port)
                                         "NREPL_PORT" (str nrepl-port)
-                                        "PCHAT_BASE" (str "/artifacts/" name)}})]
+                                        "PCHAT_BASE" (str "/artifacts/" name)
+                                        ;; The project exits by itself when
+                                        ;; pchat is gone, hook or no hook.
+                                        "PCHAT_PID" (str (.pid (java.lang.ProcessHandle/current)))}})]
     (swap! procs assoc name {:process p
                              :port port
                              :nrepl-port nrepl-port

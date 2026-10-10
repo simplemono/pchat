@@ -80,8 +80,20 @@
            (player/commands db {:duration (fn [] duration)})
            command/register)))
 
+(defn- exit-with-parent!
+  "pchat started this process; when pchat is gone, so is this."
+  []
+  (when-let [pid (some-> (System/getenv "PCHAT_PID") parse-long)]
+    (future
+      (loop []
+        (Thread/sleep 2000)
+        (if (some-> (.orElse (java.lang.ProcessHandle/of pid) nil) .isAlive)
+          (recur)
+          (System/exit 0))))))
+
 (defn -main
   [& _args]
+  (exit-with-parent!)
   (let [port (parse-long (or (System/getenv "PORT") "0"))
         nrepl-port (parse-long (or (System/getenv "NREPL_PORT") "0"))
         nrepl (nrepl/start-server! {:host "127.0.0.1" :port nrepl-port :quiet true})
