@@ -126,6 +126,9 @@
 (defn header
   [{:keys [status cost] :as chat}]
   [:header.bar
+   ;; On a phone the sidebar is a drawer; this opens it (see the
+   ;; checkbox in `page`).
+   [:label.menu {:for "nav" :aria-label "Chats"} "\u2630"]
    [:h1 (chat-name chat)]
    [:span.status {:class (name status)}
     (case status
@@ -152,31 +155,60 @@
       "Stop"])])
 
 (defn sidebar
+  "The rows are labels of the drawer checkbox: a tap on a phone opens
+  the chat and closes the drawer. On a desktop the checkbox changes
+  nothing."
   [{:keys [chats current]}]
-  [:aside.sidebar
-   [:div.brand "pchat"]
-   [:button.new {:on {:click [[:data/command {:command/kind :chat/new}]]}}
-    "New chat"]
-   [:ul.chats
-    (for [{:keys [id status] :as chat} (sort-by #(or (:updated %) 0) > (vals chats))]
-      [:li {:replicant/key id
-            :class (str (when (= id current) "current")
-                        (when (= :working status) " working"))
-            :on {:click [[:data/command {:command/kind :chat/open
-                                         :command/data {:id id}}]]}}
-       [:span.name (chat-name chat)]
-       (when (= :working status)
-         [:span.dot])])]])
+  (let [chats (sort-by #(or (:updated %) 0) > (vals chats))]
+    [:aside.sidebar
+     [:div.brand "pchat"]
+     [:label.new {:for "nav"
+                  :role "button"
+                  :on {:click [[:data/command {:command/kind :chat/new}]]}}
+      "New chat"]
+     ;; The list is keyed by its order: a chat that moves to the top
+     ;; makes a new list. Replicant 2026.07.1 records the wrong vdom for
+     ;; a row it moves to the front, and the row's next change (the
+     ;; working dot going away) is not rendered.
+     [:ul.chats {:replicant/key (str/join " " (map :id chats))}
+      (for [{:keys [id status] :as chat} chats]
+        [:li {:replicant/key id
+              :class (str (when (= id current) "current")
+                          (when (= :working status) " working"))}
+         [:label.row {:for "nav"
+                      :on {:click [[:data/command {:command/kind :chat/open
+                                                   :command/data {:id id}}]]}}
+          [:span.name (chat-name chat)]
+          (when (= :working status)
+            [:span.dot])]])]]))
+
+(defn views
+  "On a phone the chat and the card take turns: two radios, the labels
+  are the tabs, the stylesheet shows one of the two."
+  []
+  [:nav.views
+   [:label {:for "view-chat"} "Chat"]
+   [:label {:for "view-made"} "What we made"]])
 
 (defn page
   "`opts`: `:key-missing?` and `:project` (see `pchat.artifacts/view`)."
-  [{:keys [chats current artifacts/list] :as db} opts]
+  [{:keys [chats current] files :artifacts/list :as db} opts]
   (let [chat (get chats current)
-        card? (seq list)]
+        card? (seq files)]
     [:div.pchat
+     ;; The drawer state on a phone, toggled by labels, never rendered
+     ;; with :checked so that the person's choice survives a frame.
+     [:input#nav.toggle {:type "checkbox"}]
      (sidebar db)
+     [:label.backdrop {:for "nav"}]
      [:div.rchat {:class (when card? "with-card")}
+      (when card?
+        (list
+         [:input#view-chat.toggle {:type "radio" :name "view" :default-checked "true"}]
+         [:input#view-made.toggle {:type "radio" :name "view"}]))
       (header chat)
+      (when card?
+        (views))
       [:div.body
        [:div.chat
         (feed chat)

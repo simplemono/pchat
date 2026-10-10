@@ -1,8 +1,33 @@
-/* pchat on top of rchat's stylesheet: the sidebar with the chats. */
+/* pchat on top of rchat's stylesheet: the sidebar with the chats, and
+   the phone layout, where the sidebar is a drawer and the chat and the
+   card are two tabs. Both are driven by hidden inputs and their labels,
+   so that a frame from the server never resets them. */
 .pchat {
   display: flex;
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
+}
+
+.pchat .toggle {
+  display: none;
+}
+
+.pchat .menu,
+.pchat .backdrop,
+.pchat .views {
+  display: none;
+}
+
+.pchat .rchat .bar h1 {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pchat .rchat .bar .status {
+  white-space: nowrap;
 }
 
 .pchat .rchat {
@@ -29,6 +54,7 @@
 }
 
 .pchat .sidebar .new {
+  display: block;
   padding: 8px 12px;
   border: 1px solid #3a3d47;
   border-radius: 8px;
@@ -53,11 +79,15 @@
 }
 
 .pchat .sidebar .chats li {
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.pchat .sidebar .chats li .row {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: 8px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -87,9 +117,124 @@
   animation: rchat-pulse 1.2s infinite;
 }
 
-@media (max-width: 760px) {
+/* A phone or a tablet held upright. */
+@media (max-width: 900px) {
   .pchat .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    width: min(80vw, 300px);
+    padding-top: calc(16px + env(safe-area-inset-top, 0px));
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+
+  .pchat #nav:checked ~ .sidebar {
+    transform: none;
+  }
+
+  .pchat .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    background: rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .pchat #nav:checked ~ .backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .pchat .sidebar .chats li .row {
+    min-height: 44px;
+  }
+
+  .pchat .menu {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    margin-left: -6px;
+    border-radius: 8px;
+    font-size: 20px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .pchat .menu:active {
+    background: var(--rchat-panel);
+  }
+
+  .pchat .rchat .bar {
+    gap: 10px;
+    padding: 6px 12px;
+  }
+
+  .pchat .views {
+    display: flex;
+    flex: none;
+    margin: 8px 12px 0;
+    padding: 3px;
+    gap: 3px;
+    border-radius: 10px;
+    background: var(--rchat-panel);
+  }
+
+  .pchat .views label {
+    flex: 1;
+    padding: 7px;
+    border-radius: 8px;
+    text-align: center;
+    color: var(--rchat-muted);
+    font-size: 14px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .pchat #view-chat:checked ~ .views label[for="view-chat"],
+  .pchat #view-made:checked ~ .views label[for="view-made"] {
+    background: var(--rchat-line);
+    color: var(--rchat-text);
+  }
+
+  /* The card above the composer, so that a wish can be typed while
+     looking at the creation; the feed is the other tab. */
+  .pchat .rchat .body {
+    flex-direction: column-reverse;
+  }
+
+  .pchat .rchat .card {
+    flex: 1;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    padding: 8px 12px;
+    border: 0;
+  }
+
+  .pchat #view-made:checked ~ .body .chat {
+    flex: none;
+  }
+
+  .pchat #view-made:checked ~ .body .chat .feed,
+  .pchat #view-chat:checked ~ .body .card {
     display: none;
+  }
+
+  .pchat .rchat .canvas-bar .label {
+    display: none;
+  }
+
+  .pchat .rchat .canvas-bar select.artifacts {
+    max-width: none;
   }
 }
 
