@@ -8,7 +8,7 @@
          :deps/root "server"}
         io.github.simplemono/fnmotion
         {:git/url "https://github.com/simplemono/fnmotion.git"
-         :git/sha "da616c8689ad0e44be32b875e2feb8332666987e"}}
+         :git/sha "727c668e158f4e21ab669fce012d68adeb6eca16"}}
  :tasks
  {render
   {:doc "bb render <file.mp4>: the design as a video, with its audio."

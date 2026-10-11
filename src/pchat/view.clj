@@ -107,13 +107,41 @@
             (str/blank? text)
             (nil? error))))
 
+(defn- clock
+  "15:49 on 11 Oct, in the time of the server."
+  [ms]
+  (.format (java.time.format.DateTimeFormatter/ofPattern "HH:mm, d MMM")
+           (java.time.LocalDateTime/ofInstant (java.time.Instant/ofEpochMilli ms)
+                                              (java.time.ZoneId/systemDefault))))
+
+(defn- run-view
+  "A run of the webhook: when, how long, what it printed, what it made."
+  [{:keys [n at exit seconds output made]}]
+  [:div.item.step.run {:replicant/key (str "run-" n)}
+   [:details.work {:class (when-not (zero? exit) "failed")}
+    [:summary [:i18n :hook/ran] " · " (clock at) " · " (str seconds " s")
+     (when-not (zero? exit) [:i18n :tool/failed])]
+    (when (seq output)
+      [:pre.output (feed/cut 2000 output)])
+    (when (seq made)
+      [:p.made
+       (for [path made]
+         [:button.link {:on {:click [[:data/command {:command/kind :artifacts/open
+                                                     :command/data {:path path}}]]}}
+          (artifacts/title path)])])]])
+
+(def shown-runs
+  "The last runs of the webhook under the chat."
+  10)
+
 (defn feed
-  [{:keys [status] :as chat}]
+  [{:keys [status runs] :as chat}]
   [:section.feed {:data-stick-to-end "true"}
    (->> (with-handover chat)
         (map-indexed vector)
         (filter (fn [[_ item]] (shown? item)))
         (map (fn [[index item]] (item-view index item))))
+   (map run-view (take-last shown-runs runs))
    (when (= :working status)
      [:div.item.working {:replicant/key "working"}
       [:span.dot]
@@ -140,9 +168,39 @@
                                                        :command/data {:id id}}]]}}
      [:i18n :chat/delete]]))
 
+(defn- hook-button
+  [{:keys [id hook]} hook-open]
+  [:button.link.hook {:class (str (when hook "on") (when (= id hook-open) " open"))
+                      :on {:click [[:data/command {:command/kind :hook/toggle
+                                                   :command/data {:id id}}]]}}
+   [:i18n :hook/button]])
+
+(defn hook-panel
+  "Under the header when opened: the address of the webhook to paste
+  into the other service, how it went so far, on and off."
+  [{:keys [id hook runs] :as chat} {:keys [hook-url]}]
+  [:div.hook-panel
+   (if hook
+     (list
+      [:input.hook-url {:replicant/key (:secret hook)
+                        :value (when hook-url (hook-url chat))
+                        :readonly true
+                        :title [:i18n :hook/url-title]}]
+      [:span.runs (if (seq runs)
+                    [:i18n :hook/runs {:count (count runs)}]
+                    [:i18n :hook/none])]
+      [:button.link {:on {:click [[:data/command {:command/kind :hook/remove
+                                                  :command/data {:id id}}]]}}
+       [:i18n :hook/remove]])
+     (list
+      [:span.explain [:i18n :hook/explain]]
+      [:button.link {:on {:click [[:data/command {:command/kind :hook/create
+                                                  :command/data {:id id}}]]}}
+       [:i18n :hook/create]]))])
+
 (defn header
   "The name of the chat is a field: a change renames it."
-  [{:keys [id status cost name] :as chat} {:keys [deleting]}]
+  [{:keys [id status cost name] :as chat} {:keys [deleting hook-open]}]
   [:header.bar
    ;; On a phone the sidebar is a drawer; this opens it (see the
    ;; checkbox in `page`).
@@ -161,6 +219,7 @@
       [:i18n :chat/ready])]
    (when (pos? cost)
      [:span.spend (format "$%.2f" cost)])
+   (hook-button chat hook-open)
    (delete-controls chat deleting)])
 
 (defn composer
@@ -234,7 +293,7 @@
 (defn page
   "`opts`: `:key-missing?`, `:locale` (the language of the page, see
   `pchat.i18n`) and `:project` (see `pchat.artifacts/view`)."
-  [{:keys [chats current deleting] files :artifacts/list :as db} {:keys [locale] :as opts}]
+  [{:keys [chats current deleting hook-open] files :artifacts/list :as db} {:keys [locale] :as opts}]
   (let [chat (get chats current)
         card? (seq files)]
     [:div.pchat {:lang (some-> locale name)}
@@ -248,7 +307,9 @@
         (list
          [:input#view-chat.toggle {:type "radio" :name "view" :default-checked "true"}]
          [:input#view-made.toggle {:type "radio" :name "view"}]))
-      (header chat {:deleting deleting})
+      (header chat {:deleting deleting :hook-open hook-open})
+      (when (= current hook-open)
+        (hook-panel chat opts))
       (when card?
         (views))
       [:div.body
@@ -256,4 +317,4 @@
         (feed chat)
         (composer chat opts)]
        (when card?
-         [:section.card (artifacts/view db (select-keys opts [:project]))])]]]))
+         [:section.card (artifacts/view db (select-keys opts [:project :share]))])]]]))

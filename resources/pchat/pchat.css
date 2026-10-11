@@ -156,6 +156,71 @@
   color: #e5484d;
 }
 
+.pchat .rchat .bar button.link.hook.on {
+  color: var(--rchat-text);
+}
+
+.pchat .rchat .bar button.link.hook.open {
+  text-decoration: underline;
+}
+
+/* The webhook panel under the header, see pchat.hooks. */
+.pchat .rchat .hook-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--rchat-line);
+  background: var(--rchat-panel);
+  font-size: 13px;
+  color: var(--rchat-muted);
+}
+
+.pchat .rchat .hook-panel .explain {
+  flex: 1;
+  min-width: 200px;
+}
+
+.pchat .rchat .hook-panel input.hook-url {
+  flex: 1;
+  min-width: 200px;
+  padding: 4px 8px;
+  border: 1px solid var(--rchat-line);
+  border-radius: 6px;
+  background: var(--rchat-bg);
+  font: inherit;
+  font-size: 12px;
+  color: var(--rchat-text);
+  text-overflow: ellipsis;
+}
+
+.pchat .rchat .hook-panel button.link {
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  color: var(--rchat-muted);
+  font: inherit;
+  font-size: 13px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.pchat .rchat .hook-panel button.link:hover {
+  color: var(--rchat-text);
+}
+
+.rchat .feed .run .made button.link {
+  padding: 0;
+  margin-right: 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .pchat .rchat .bar .confirm {
   display: inline-flex;
   align-items: center;
@@ -187,6 +252,19 @@
   font-size: 13px;
   color: var(--rchat-muted);
   white-space: nowrap;
+}
+
+.rchat .canvas-bar input.share-link {
+  flex: 1 1 200px;
+  min-width: 160px;
+  padding: 2px 6px;
+  border: 1px solid #d7d7d2;
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+  color: #444;
+  text-overflow: ellipsis;
 }
 
 .rchat .canvas-bar button.link {
@@ -379,10 +457,22 @@
   }
 }
 
-/* The artifacts pane. */
+/* The artifacts pane. The bar wraps: the share field and its button
+   take a second line when the first is full. */
+.rchat .canvas-bar {
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+.rchat .canvas-bar .label,
+.rchat .canvas-bar a.link,
+.rchat .canvas-bar button.link {
+  white-space: nowrap;
+}
+
 .rchat .canvas-bar select.artifacts {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 140px;
+  min-width: 140px;
   max-width: 320px;
   padding: 4px 8px;
   border: 1px solid #d7d7d2;

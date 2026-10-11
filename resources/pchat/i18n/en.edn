@@ -38,9 +38,13 @@
  :artifacts/label "What we made"
  :artifacts/open "Open"
  :artifacts/download "Download"
+ :artifacts/share "Share"
+ :artifacts/unshare "Stop sharing"
+ :artifacts/share-title "Anyone with this link can open the file"
  :artifacts/video " · video"
  :artifacts/render "Make the video"
  :artifacts/rendering [:fn/str "Making the video {{:progress}}"]
+ :artifacts/render-stop "Stop"
  :artifacts/render-failed [:fn/str "The video did not come out: {{:error}}"]
  :artifacts/creation "Your creation"
  :artifacts/empty "What the agent makes for you appears here."
@@ -50,6 +54,15 @@
  :artifacts/reload-failed [:fn/str "Loading {{:file}} failed: {{:error}}"]
 
  :genui/rejected [:fn/str "This part could not be shown: {{:error}}"]
+
+ :hook/button "Webhook"
+ :hook/explain "A webhook is an address another service calls when something happened there; the call runs this chat's script. Tell the agent what should happen."
+ :hook/create "Turn on"
+ :hook/remove "Turn off"
+ :hook/url-title "Paste this address into the service that should call it"
+ :hook/runs [:fn/str "{{:count}} runs"]
+ :hook/none "No runs yet"
+ :hook/ran "Webhook ran"
 
  :command/nothing-to-send "Nothing to send."
  :command/no-such-chat "No such chat."

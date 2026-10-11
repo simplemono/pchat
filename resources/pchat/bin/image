@@ -1,0 +1,95 @@
+#!/usr/bin/env bb
+;; bin/image "<what to show>" <file> [--ratio 9:16] [--from <image>]   a picture
+;; from a description, by an image model through OpenRouter
+;; (OPENROUTER_API_KEY). <file> is a path under artifacts/, "card/pool.png" or
+;; "pool.png"; --ratio is 1:1, 9:16 (a story), 16:9, 4:5, 3:4 ...; --from takes
+;; a picture under artifacts/ or /looks/ as the starting point, for a photo
+;; turned into a style. The path and the cost are printed.
+(require '[babashka.fs :as fs]
+         '[babashka.http-client :as http]
+         '[cheshire.core :as json]
+         '[clojure.java.io :as io]
+         '[clojure.string :as str])
+
+(defn fail
+  [message]
+  (println message)
+  (System/exit 1))
+
+(def model
+  (or (System/getenv "PCHAT_IMAGE_MODEL") "google/gemini-3.1-flash-image"))
+
+(defn options
+  "[\"a\" \"--ratio\" \"9:16\" \"b\"] -> {:args [\"a\" \"b\"] :ratio \"9:16\"}"
+  [args]
+  (loop [args args
+         out {:args []}]
+    (let [[a b & more] args]
+      (cond
+        (nil? a) out
+        (= "--ratio" a) (recur more (assoc out :ratio b))
+        (= "--from" a) (recur more (assoc out :from b))
+        :else (recur (rest args) (update out :args conj a))))))
+
+(defn source-file
+  "The picture --from names: under artifacts/, or an upload under /looks/."
+  [from]
+  (let [from (str/replace (str from) #"^/" "")
+        candidates [(fs/file from)
+                    (fs/file "artifacts" from)
+                    (fs/file ".pchat" from)]]
+    (or (some #(when (fs/regular-file? %) %) candidates)
+        (fail (str "There is no picture " from " under artifacts/ or /looks/.")))))
+
+(defn data-url
+  [file]
+  (let [bytes (fs/read-all-bytes file)
+        type (case (str/lower-case (or (fs/extension file) ""))
+               "jpg" "image/jpeg" "jpeg" "image/jpeg" "webp" "image/webp" "gif" "image/gif"
+               "image/png")]
+    (str "data:" type ";base64," (.encodeToString (java.util.Base64/getEncoder) bytes))))
+
+(defn generate!
+  "The bytes of the picture, its media type and the cost."
+  [key prompt {:keys [ratio from]}]
+  (let [response (http/post "https://openrouter.ai/api/v1/images"
+                            {:headers {"Authorization" (str "Bearer " key)
+                                       "Content-Type" "application/json"}
+                             :body (json/generate-string
+                                    (cond-> {:model model
+                                             :prompt prompt
+                                             :n 1}
+                                      ratio (assoc :aspect_ratio ratio)
+                                      from (assoc :input_references
+                                                  [{:type "image_url"
+                                                    :image_url {:url (data-url (source-file from))}}])))
+                             :throw false
+                             :timeout 180000})
+        body (try (json/parse-string (:body response) true) (catch Exception _ nil))]
+    (when (not= 200 (:status response))
+      (fail (str "The image service answered " (:status response) ": "
+                 (or (get-in body [:error :message]) (:body response)))))
+    (let [{:keys [b64_json media_type]} (first (:data body))]
+      (when (str/blank? b64_json)
+        (fail "The image service sent no picture."))
+      {:bytes (.decode (java.util.Base64/getDecoder) ^String b64_json)
+       :type (or media_type "image/png")
+       :cost (get-in body [:usage :cost])})))
+
+(let [{:keys [args] :as opts} (options *command-line-args*)
+      [prompt file] args
+      key (System/getenv "OPENROUTER_API_KEY")]
+  (when (or (str/blank? prompt) (str/blank? file))
+    (fail "bin/image \"<what to show>\" <file> [--ratio 9:16] [--from <image>]"))
+  (when (or (str/includes? file "..") (str/starts-with? file "/"))
+    (fail "The file is a path under artifacts/, like card/pool.png."))
+  (when (str/blank? key)
+    (fail "OPENROUTER_API_KEY is not set, so no picture."))
+  (let [{:keys [bytes type cost]} (generate! key prompt opts)
+        extension (case type "image/jpeg" "jpg" "image/webp" "webp" "image/gif" "gif" "png")
+        target (fs/file "artifacts" (if (fs/extension file) file (str file "." extension)))]
+    (fs/create-dirs (fs/parent target))
+    (io/copy bytes (fs/file target))
+    (println (str target ": " (count bytes) " bytes"
+                  (when cost (str ", $" (format "%.3f" (double cost))))
+                  ", model " model))))

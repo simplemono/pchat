@@ -185,11 +185,31 @@
                  :else [:div.canvas-placeholder [:i18n :artifacts/starting]]))
     [:div.canvas-placeholder [:i18n :artifacts/no-preview]]))
 
+(defn- share-controls
+  "Share makes a link anyone can open; the link is shown in a field to
+  copy from, with the way to end it."
+  [{:keys [path]} {:keys [share]}]
+  (when share
+    (if-let [url (share path)]
+      (list
+       [:input.share-link {:replicant/key url
+                           :value url
+                           :readonly true
+                           :title [:i18n :artifacts/share-title]}]
+       [:button.link {:on {:click [[:data/command {:command/kind :artifacts/unshare
+                                                   :command/data {:path path}}]]}}
+        [:i18n :artifacts/unshare]])
+      [:button.link {:on {:click [[:data/command {:command/kind :artifacts/share
+                                                  :command/data {:path path}}]]}}
+       [:i18n :artifacts/share]])))
+
 (defn view
   "The pane: a chooser over the artifacts, open and download links, the
   current one shown by its kind. `:project` in `opts` is the function of a
   project artifact to its state, see `pchat.projects`, with the state of
-  its render under `:render`, see `pchat.render`."
+  its render under `:render`, see `pchat.render`; `:share` the function
+  of an artifact path to its public link, nil when there is none, see
+  `pchat.share`."
   ([db]
    (view db {}))
   ([{files :artifacts/list current :artifacts/current} opts]
@@ -201,8 +221,11 @@
         [:select.artifacts {:value (:path artifact)
                             :on {:change [[:data/command {:command/kind :artifacts/open
                                                           :command/data {:path :event/target.value}}]]}}
+         ;; The option carries the choice: a value on the select alone
+         ;; is set before the options exist on a fresh page.
          (for [{:keys [path title kind]} files]
-           [:option {:value path}
+           [:option {:value path
+                     :selected (= path (:path artifact))}
             title
             ;; The video of a design shares its name with the design.
             (when (= :video kind) [:i18n :artifacts/video])])])
@@ -216,7 +239,12 @@
               [:i18n :artifacts/open]]
              ;; The video of the design, made here on a click.
              (if (and (:started render) (nil? (:exit render)))
-               [:span.rendering [:i18n :artifacts/rendering {:progress (str/replace (or (:progress render) "") #"^frame " "")}]]
+               [:span.rendering
+                [:i18n :artifacts/rendering {:progress (str/replace (or (:progress render) "") #"^frame " "")}]
+                " · "
+                [:button.link {:on {:click [[:data/command {:command/kind :artifacts/render-stop
+                                                            :command/data {:path (:path artifact)}}]]}}
+                 [:i18n :artifacts/render-stop]]]
                [:button.link {:on {:click [[:data/command {:command/kind :artifacts/render
                                                            :command/data {:path (:path artifact)}}]]}}
                 [:i18n :artifacts/render]])))
@@ -227,7 +255,8 @@
             [:i18n :artifacts/open]]
            [:a.link {:href (src artifact)
                      :download (last (str/split (:path artifact) #"/"))}
-            [:i18n :artifacts/download]])))]
+            [:i18n :artifacts/download]]
+           (share-controls artifact opts))))]
      (if artifact
        (content artifact opts)
        [:div.canvas-placeholder [:i18n :artifacts/empty]])])))

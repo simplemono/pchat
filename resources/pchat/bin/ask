@@ -1,0 +1,43 @@
+#!/usr/bin/env bb
+;; bin/ask "<the question>" [text]   one answer of the model, for a small
+;; judgment inside a script: is this review positive, which theme fits.
+;; The text to judge comes as the second argument or on standard input;
+;; the answer is printed. Model: PCHAT_MODEL on OpenRouter
+;; (OPENROUTER_API_KEY), a few tenths of a cent.
+(require '[babashka.http-client :as http]
+         '[cheshire.core :as json]
+         '[clojure.string :as str])
+
+(defn fail
+  [message]
+  (println message)
+  (System/exit 1))
+
+(def model
+  (or (System/getenv "PCHAT_ASK_MODEL") (System/getenv "PCHAT_MODEL") "openai/gpt-6.1-sol"))
+
+(let [[question text] *command-line-args*
+      key (System/getenv "OPENROUTER_API_KEY")
+      text (or text (when-not (.ready *in*) nil) (slurp *in*))]
+  (when (str/blank? question)
+    (fail "bin/ask \"<the question>\" [text]"))
+  (when (str/blank? key)
+    (fail "OPENROUTER_API_KEY is not set, so no answer."))
+  (let [response (http/post "https://openrouter.ai/api/v1/chat/completions"
+                            {:headers {"Authorization" (str "Bearer " key)
+                                       "Content-Type" "application/json"}
+                             :body (json/generate-string
+                                    {:model model
+                                     :messages [{:role "system"
+                                                 :content "You answer inside a script: only the answer, in the form the question asks for, no explanation."}
+                                                {:role "user"
+                                                 :content (str question
+                                                               (when-not (str/blank? text)
+                                                                 (str "\n\n" text)))}]})
+                             :throw false
+                             :timeout 120000})
+        body (try (json/parse-string (:body response) true) (catch Exception _ nil))]
+    (when (not= 200 (:status response))
+      (fail (str "The model answered " (:status response) ": "
+                 (or (get-in body [:error :message]) (:body response)))))
+    (println (str/trim (str (get-in body [:choices 0 :message :content]))))))

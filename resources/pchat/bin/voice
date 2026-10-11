@@ -1,0 +1,91 @@
+#!/usr/bin/env bb
+;; bin/voice <artifact> "<the words>" [file] [--voice <name>]   the words spoken,
+;; by a text-to-speech model through OpenRouter (OPENROUTER_API_KEY). Written
+;; as artifacts/<artifact>/<file>, voice.mp3 unless a file is named; the path,
+;; the length and the cost are printed. Voices: sarah (the default), george,
+;; adam, alice, bella, bill, and the others ElevenLabs offers.
+(require '[babashka.fs :as fs]
+         '[babashka.http-client :as http]
+         '[babashka.process :as process]
+         '[cheshire.core :as json]
+         '[clojure.java.io :as io]
+         '[clojure.string :as str])
+
+(defn fail
+  [message]
+  (println message)
+  (System/exit 1))
+
+(def model
+  (or (System/getenv "PCHAT_VOICE_MODEL") "elevenlabs/eleven-multilingual-v2"))
+
+(def default-voice
+  (or (System/getenv "PCHAT_VOICE") "sarah"))
+
+(defn options
+  [args]
+  (loop [args args
+         out {:args []}]
+    (let [[a b & more] args]
+      (cond
+        (nil? a) out
+        (= "--voice" a) (recur more (assoc out :voice b))
+        :else (recur (rest args) (update out :args conj a))))))
+
+(defn speak!
+  "The mp3 bytes of `text`."
+  [key text voice]
+  (let [response (http/post "https://openrouter.ai/api/v1/audio/speech"
+                            {:headers {"Authorization" (str "Bearer " key)
+                                       "Content-Type" "application/json"}
+                             :body (json/generate-string {:model model
+                                                          :input text
+                                                          :voice voice
+                                                          :response_format "mp3"})
+                             :as :bytes
+                             :throw false
+                             :timeout 180000})]
+    (when (not= 200 (:status response))
+      (fail (str "The voice service answered " (:status response) ": "
+                 (let [body (String. ^bytes (:body response) "UTF-8")]
+                   (or (try (get-in (json/parse-string body true) [:error :message]) (catch Exception _ nil))
+                       body)))))
+    (:body response)))
+
+(defn cost-estimate
+  "About what the words cost: the voice service bills per character,
+  two cents a thousand, and its books are written seconds after the
+  answer, too late to wait for."
+  [text]
+  (* 0.00002 (count text)))
+
+(defn seconds-of
+  [file]
+  (when (fs/which "ffprobe")
+    (some-> (process/shell {:out :string :err :string :continue true}
+                           "ffprobe" "-v" "error" "-show_entries" "format=duration" "-of" "csv=p=0" (str file))
+            :out
+            str/trim
+            parse-double
+            (* 10) Math/round (/ 10.0))))
+
+(let [{:keys [args voice]} (options *command-line-args*)
+      [artifact text file] args
+      key (System/getenv "OPENROUTER_API_KEY")
+      dir (fs/file "artifacts" (str artifact))
+      target (fs/file dir (or file "voice.mp3"))]
+  (when (or (str/blank? artifact) (str/blank? text))
+    (fail "bin/voice <artifact> \"<the words>\" [file] [--voice <name>]"))
+  (when-not (fs/directory? dir)
+    (fail (str "artifacts/" artifact " does not exist.")))
+  (when (str/blank? key)
+    (fail "OPENROUTER_API_KEY is not set, so no voice."))
+  (let [bytes (speak! key text (or voice default-voice))]
+    (when (zero? (count bytes))
+      (fail "The voice service sent no audio."))
+    (fs/create-dirs (fs/parent target))
+    (io/copy bytes (fs/file target))
+    (println (str target ": " (count bytes) " bytes"
+                  (when-let [seconds (seconds-of target)] (str ", " seconds " s"))
+                  (format ", about $%.4f" (cost-estimate text))
+                  ", voice " (or voice default-voice) ", model " model))))

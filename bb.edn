@@ -1,6 +1,7 @@
 ;; bb start    the chat at http://localhost:8080 (pi on the PATH, OPENROUTER_API_KEY set)
 ;; bb build    the browser bundle (needs a JVM)
 ;; bb test     the tests
+;; bb smoke    one real agent run: a card with music and its video (costs cents)
 ;; bb jar      the app as one uberjar for babashka, target/pchat.jar
 ;; bb deploy <sprite>   the jar as a service on a sprites.dev sprite
 ;;
@@ -63,6 +64,10 @@
            (when (stale?)
              (run 'build))
            (shell {:extra-env (env-file)} "bb" "-m" "pchat.main"))}
+
+  smoke
+  {:doc "bb smoke [--keep]: one real run of the agent on a free port, a card with music and its video; a few cents, a few minutes. Reads .env."
+   :task (shell {:extra-env (env-file) :continue true} "bb" "smoke.clj" (or (first *command-line-args*) ""))}
 
   jar
   {:doc "The app and all its dependencies as target/pchat.jar, run with `bb target/pchat.jar`. Compiles the bundle first when stale."

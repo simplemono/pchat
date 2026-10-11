@@ -54,6 +54,7 @@ MIT. Storrito-specific parts are fine here, customer-specific ones are not.
 echo 'OPENROUTER_API_KEY=...' > .env   # once
 bb start                             # http://localhost:8080, compiles the bundle first (JVM)
 bb test
+bb smoke                             # one real agent run: a card, music, the video; cents
 ```
 
 `pi` must be on the PATH ([pi-mono](https://github.com/earendil-works/pi-mono),
@@ -109,6 +110,41 @@ file or a link points at this host or at https, `:send "text"` on a
 button sends that text as the person's next message, `:open` shows an
 artifact. A piece of music with a player and a button each is the
 typical block.
+
+### Pictures and a voice
+
+`bin/image "<what to show>" <file>` makes a picture with an image model
+through OpenRouter (about 7 cents), `--ratio 9:16` for a story, `--from
+<picture>` to start from a photo; `bin/voice <name> "<the words>"`
+speaks them with an ElevenLabs voice (a tenth of a cent a sentence),
+as a track of the design like music. `bin/ask "<question>" [text]` is
+one answer of the model for a small judgment inside a script.
+
+### Automations
+
+A chat has a webhook: the Webhook button in the header turns it on and
+shows the address, `/hook/<chat-id>/<secret>`, outside the token, to
+paste into the service that should call it (Zapier, a form, a
+calendar). A call runs `hooks/<chat-id>.clj` in the workspace with the
+body of the request on standard input, `PCHAT_HOOK_METHOD`,
+`PCHAT_HOOK_QUERY` and `PCHAT_HOOK_CONTENT_TYPE` in the environment,
+one run at a time per chat; the answer carries what the script
+printed when it is done within twenty-five seconds, else word that it
+goes on. Every run is a row under the chat with its output and the
+artifacts it made, and a block in `hooks/<chat-id>.log` for the agent,
+with the body the call brought. The agent knows the path of its
+chat's script from its prompt and writes it when the person wants
+something to happen by itself: plain babashka, the same scripts as the
+agent, `bin/ask` for a small judgment of the model. Turning the
+webhook off ends the address and keeps the script; deleting the chat
+deletes both (`pchat.hooks`).
+
+### Sharing
+
+Share in the artifacts bar makes a link anyone can open,
+`/share/<id>`, for one file as it is at the time: the person pastes it
+into a message, the other side sees the video. Stop sharing ends it.
+Projects are not shared, only files (`pchat.share`).
 
 ### Housekeeping
 
@@ -202,4 +238,10 @@ the composer one line under the creation on a phone, `<html lang>` and
 the language of a rejection follow the page, EN/DE links in the
 sidebar, tests on GitHub Actions.
 
-Next: automations (a webhook per chat runs a script the agent wrote).
+Automations and the rest, 2026-10-11: a webhook per chat runs the
+script the agent wrote, its runs under the chat (`pchat.hooks`,
+`bin/ask`); `bin/image` and `bin/voice` beside `bin/music`; Stop
+while a video renders; Share for a file; `bb smoke` runs the agent
+once for real and checks the video that came out.
+
+Next: the first customer automation as a chat.

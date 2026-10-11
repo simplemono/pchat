@@ -18,12 +18,14 @@
             [org.httpkit.server :as server]
             [pchat.artifacts :as artifacts]
             [pchat.chat :as chat]
+            [pchat.hooks :as hooks]
             [pchat.i18n :as i18n]
             [pchat.looks :as looks]
             [pchat.pi :as pi]
             [pchat.projects :as projects]
             [pchat.render :as render]
             [pchat.session :as session]
+            [pchat.share :as share]
             [pchat.tools :as tools]
             [pchat.view :as view]
             [rchat.auth :as auth]
@@ -77,6 +79,18 @@
                   :bb (or (System/getenv "BB") "bb")
                   :env (tools/env)}))
 
+(def hooks
+  (hooks/handle {:db db
+                 :workspace workspace
+                 :bb (or (System/getenv "BB") "bb")
+                 :env (tools/env)
+                 :artifacts (io/file workspace "artifacts")}))
+
+(def shares
+  (share/handle {:db db
+                 :dir (io/file workspace "artifacts")
+                 :file (io/file workspace ".pchat" "shares.edn")}))
+
 (def template-files
   "The project templates and the scripts, copied into the workspace at
   start: .pchat/template/motion/, .pchat/template/hyperframes/ and bin/."
@@ -91,7 +105,10 @@
    "bin/new"
    "bin/eval"
    "bin/render"
-   "bin/music"])
+   "bin/music"
+   "bin/image"
+   "bin/voice"
+   "bin/ask"])
 
 (defn- install-workspace!
   "The template and the scripts the agent uses, always the ones of this
@@ -221,7 +238,8 @@
                                :session-id id
                                :provider provider
                                :model model
-                               :system-prompt (slurp (io/resource "pchat/prompts/system.md"))
+                               :system-prompt (str (slurp (io/resource "pchat/prompts/system.md"))
+                                                   "\n\n" (hooks/prompt id))
                                :env (tools/env)
                                :on-event #(on-event id %)})]
         (swap! pis assoc id (assoc handle :last-event (now)))
@@ -276,7 +294,7 @@
 (defn- new-command
   [w]
   (let [id (str (random-uuid))]
-    (swap! db #(-> % (assoc-in [:chats id] (new-chat id)) (assoc :current id) (dissoc :deleting)))
+    (swap! db #(-> % (assoc-in [:chats id] (new-chat id)) (assoc :current id) (dissoc :deleting :hook-open)))
     (command/accepted w)))
 
 (defn- open-command
@@ -284,7 +302,7 @@
   (let [{:keys [id]} (command/command-data w)]
     (if (get-in @db [:chats id])
       (do (open! id)
-          (swap! db dissoc :deleting)
+          (swap! db dissoc :deleting :hook-open)
           (command/accepted w))
       (command/rejected w (say w [:i18n :command/no-such-chat])))))
 
@@ -311,6 +329,7 @@
   (when-let [file (get-in @db [:chats id :file])]
     (io/delete-file (io/file file) true))
   (write-names! (dissoc (read-names) id))
+  (hooks/forget! hooks id)
   (swap! db (fn [db]
               (let [chats (dissoc (:chats db) id)
                     current (if (= id (:current db))
@@ -354,16 +373,64 @@
           (command/accepted w))
       (command/rejected w (say w [:i18n :command/no-such-artifact])))))
 
+(defn- hook-toggle-command
+  "The webhook panel of the chat, shown or hidden."
+  [w]
+  (let [{:keys [id]} (command/command-data w)]
+    (swap! db (fn [db] (if (= id (:hook-open db)) (dissoc db :hook-open) (assoc db :hook-open id))))
+    (command/accepted w)))
+
+(defn- hook-create-command
+  [w]
+  (let [{:keys [id]} (command/command-data w)]
+    (if (get-in @db [:chats id])
+      (do (hooks/create! hooks id)
+          (command/accepted w))
+      (command/rejected w (say w [:i18n :command/no-such-chat])))))
+
+(defn- hook-remove-command
+  [w]
+  (let [{:keys [id]} (command/command-data w)]
+    (hooks/remove! hooks id)
+    (command/accepted w)))
+
+(defn- share-command
+  [w]
+  (let [{:keys [path]} (command/command-data w)]
+    (if (some #(and (= path (:path %)) (not= :project (:kind %))) (:artifacts/list @db))
+      (do (share/share! shares path)
+          (command/accepted w))
+      (command/rejected w (say w [:i18n :command/no-such-artifact])))))
+
+(defn- unshare-command
+  [w]
+  (let [{:keys [path]} (command/command-data w)]
+    (share/unshare! shares path)
+    (command/accepted w)))
+
+(defn- render-stop-command
+  [w]
+  (let [{:keys [path]} (command/command-data w)]
+    (render/stop! renders path)
+    (command/accepted w)))
+
 (defn page-view
   "The page in the language of the connection."
   [w]
   (let [value @db
-        locale (i18n/locale (:ring/request w))]
+        locale (i18n/locale (:ring/request w))
+        base-url (share/base-url (:ring/request w))]
     (-> (view/page value {:key-missing? key-missing?
                           :locale locale
                           :project (fn [{:keys [path]}]
                                      (assoc (get-in value [:projects path])
-                                            :render (get-in value [:renders path])))})
+                                            :render (get-in value [:renders path])))
+                          :share (fn [path]
+                                   (some->> (get-in value [:shares path])
+                                            (share/link base-url)))
+                          :hook-url (fn [{:keys [id hook]}]
+                                      (when hook
+                                        (hooks/url base-url id (:secret hook))))})
         (i18n/translate locale))))
 
 (def head
@@ -404,7 +471,19 @@
    {:command/kind :artifacts/open
     :command/fn #'open-artifact-command}
    {:command/kind :artifacts/render
-    :command/fn #'render-command}])
+    :command/fn #'render-command}
+   {:command/kind :artifacts/render-stop
+    :command/fn #'render-stop-command}
+   {:command/kind :hook/toggle
+    :command/fn #'hook-toggle-command}
+   {:command/kind :hook/create
+    :command/fn #'hook-create-command}
+   {:command/kind :hook/remove
+    :command/fn #'hook-remove-command}
+   {:command/kind :artifacts/share
+    :command/fn #'share-command}
+   {:command/kind :artifacts/unshare
+    :command/fn #'unshare-command}])
 
 (defn get-register
   []
@@ -417,25 +496,44 @@
                             (looks/register {:db db
                                              :looks-dir looks-dir}))))
 
+(def open-register
+  "The routes outside the token: a share link and a webhook address are
+  their own keys."
+  (concat (share/register shares)
+          (hooks/register hooks)))
+
+(defn handler
+  "The ring handler: the open routes as they are, everything else
+  behind the token."
+  [token]
+  (let [open (http/ring-handler (fn [] open-register))
+        secured (auth/wrap (http/ring-handler get-register) {:token token})]
+    (fn [request]
+      (if (some (fn [{:keys [ring/route]}] (http/match route request)) open-register)
+        (open request)
+        (secured request)))))
+
 (defn -main
   [& _args]
   (.mkdirs sessions-dir)
   (.mkdirs (:dir artifacts))
   (.mkdirs looks-dir)
   (install-workspace!)
+  (share/load! shares)
   (load-chats!)
+  (hooks/load! hooks)
   (open! (:current @db))
   (artifacts/refresh! artifacts)
   (poll-artifacts!)
   (sync-projects!)
   (reap-idle-pis!)
   (.addShutdownHook (Runtime/getRuntime) (Thread. #(do (projects/stop-all! projects)
-                                                       (render/stop-all! renders))))
+                                                       (render/stop-all! renders)
+                                                       (hooks/stop-all! hooks))))
   (sse/watch! db)
   (let [port (parse-long (or (System/getenv "PORT") "8080"))
         token (System/getenv "PCHAT_TOKEN")]
-    (server/run-server (auth/wrap (http/ring-handler get-register) {:token token})
-                       {:port port})
+    (server/run-server (handler token) {:port port})
     (println (str "pchat on "
                   (if token
                     (auth/link (str "http://localhost:" port) token)
