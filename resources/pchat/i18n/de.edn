@@ -10,6 +10,11 @@
  :chat/ready "Bereit"
  :chat/you "Du"
  :chat/handover "Bereit für dich"
+ :chat/delete "Löschen"
+ :chat/delete-sure "Diesen Chat endgültig löschen?"
+ :chat/delete-yes "Löschen"
+ :chat/keep "Behalten"
+ :chat/rename-title "Der Name des Chats; hier zu ändern"
  :chat/model-failed "Der Aufruf des Modells ist fehlgeschlagen."
  :chat/rejected [:fn/str "Das ist nicht durchgegangen: {{:error}}"]
 
@@ -32,12 +37,17 @@
  :artifacts/open "Öffnen"
  :artifacts/download "Herunterladen"
  :artifacts/video " · Video"
+ :artifacts/render "Video erstellen"
+ :artifacts/rendering [:fn/str "Video wird erstellt {{:progress}}"]
+ :artifacts/render-failed [:fn/str "Das Video ist nicht gelungen: {{:error}}"]
  :artifacts/creation "Dein Werk"
  :artifacts/empty "Was der Agent für dich macht, erscheint hier."
  :artifacts/no-preview "Für diese Datei gibt es keine Vorschau. Lade sie oben herunter."
  :artifacts/starting "Dieses Artefakt startet …"
  :artifacts/stopped [:fn/str "Der Prozess dieses Artefakts hat sich beendet (Exit {{:exit}}). Seine .log sagt warum; pchat startet ihn neu."]
  :artifacts/reload-failed [:fn/str "{{:file}} konnte nicht geladen werden: {{:error}}"]
+
+ :genui/rejected [:fn/str "Dieser Teil konnte nicht angezeigt werden: {{:error}}"]
 
  :command/nothing-to-send "Nichts zu senden."
  :command/no-such-chat "Diesen Chat gibt es nicht."

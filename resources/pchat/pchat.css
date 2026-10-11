@@ -117,6 +117,135 @@
   animation: rchat-pulse 1.2s infinite;
 }
 
+.pchat .rchat .bar h1 input.title {
+  width: 100%;
+  min-width: 0;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-overflow: ellipsis;
+}
+
+.pchat .rchat .bar h1 input.title:hover,
+.pchat .rchat .bar h1 input.title:focus {
+  border-color: var(--rchat-line);
+  background: var(--rchat-panel);
+  outline: none;
+}
+
+.pchat .rchat .bar button.link {
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  color: var(--rchat-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.pchat .rchat .bar button.link:hover {
+  color: var(--rchat-text);
+  text-decoration: underline;
+}
+
+.pchat .rchat .bar button.link.danger {
+  color: #e5484d;
+}
+
+.pchat .rchat .bar .confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.pchat .sidebar .languages {
+  margin-top: auto;
+  display: flex;
+  gap: 10px;
+  padding: 4px 8px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+.pchat .sidebar .languages a {
+  color: #8b8f9a;
+  text-decoration: none;
+}
+
+.pchat .sidebar .languages a.current {
+  color: #fff;
+  font-weight: 700;
+}
+
+.rchat .canvas-bar .rendering {
+  font-size: 13px;
+  color: var(--rchat-muted);
+  white-space: nowrap;
+}
+
+.rchat .canvas-bar button.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Hiccup the agent wrote into an answer, see pchat.genui. */
+.rchat .genui {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--rchat-line);
+  border-radius: 10px;
+  background: var(--rchat-panel);
+}
+
+.rchat .genui audio,
+.rchat .genui video,
+.rchat .genui img {
+  display: block;
+  max-width: 100%;
+  margin: 6px 0;
+}
+
+.rchat .genui button {
+  padding: 6px 12px;
+  margin: 4px 6px 4px 0;
+  border: 1px solid var(--rchat-line);
+  border-radius: 8px;
+  background: var(--rchat-bg, #fff);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.rchat .genui button:hover {
+  border-color: var(--rchat-text);
+}
+
+.rchat .genui ul {
+  padding-left: 0;
+  list-style: none;
+}
+
+.rchat .genui li {
+  margin: 6px 0;
+}
+
+.rchat .genui-error pre {
+  margin: 6px 0 0;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
 /* A phone or a tablet held upright. */
 @media (max-width: 900px) {
   .pchat .sidebar {
@@ -222,6 +351,18 @@
 
   .pchat #view-made:checked ~ .body .chat {
     flex: none;
+  }
+
+  /* Under the creation the composer is one line, the creation gets
+     the room. */
+  .pchat #view-made:checked ~ .body .chat .composer textarea {
+    height: 42px !important;
+    min-height: 42px !important;
+  }
+
+  .pchat .rchat .bar .confirm,
+  .pchat .rchat .bar button.link.delete {
+    font-size: 12px;
   }
 
   .pchat #view-made:checked ~ .body .chat .feed,

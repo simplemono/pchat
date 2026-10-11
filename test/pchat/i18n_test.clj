@@ -31,7 +31,10 @@
   (testing "?lang= on the page wins"
     (is (= :de (i18n/locale {:query-string "lang=de" :headers {"accept-language" "en"}})))
     (is (= :en (i18n/locale {:query-string "token=x&lang=en" :headers {"accept-language" "de"}})))
-    (is (= :de (i18n/locale {:query-string "lang=fr" :headers {"accept-language" "de"}})))))
+    (is (= :de (i18n/locale {:query-string "lang=fr" :headers {"accept-language" "de"}}))))
+  (testing "a command posted from a page with ?lang= follows the page"
+    (is (= :de (i18n/locale {:headers {"referer" "http://x/?token=a&lang=de" "accept-language" "en"}})))
+    (is (= :en (i18n/locale {:headers {"referer" "http://x/" "accept-language" "en"}})))))
 
 (deftest translate-test
   (is (= [:ul {:lang "de"} [:li "Neuer Chat"] [:li "fetch benutzt"]]

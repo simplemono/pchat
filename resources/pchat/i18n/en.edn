@@ -12,6 +12,11 @@
  :chat/ready "Ready"
  :chat/you "You"
  :chat/handover "Ready for you"
+ :chat/delete "Delete"
+ :chat/delete-sure "Delete this chat for good?"
+ :chat/delete-yes "Delete"
+ :chat/keep "Keep"
+ :chat/rename-title "The name of the chat; change it here"
  :chat/model-failed "The model call failed."
  :chat/rejected [:fn/str "That did not go through: {{:error}}"]
 
@@ -34,12 +39,17 @@
  :artifacts/open "Open"
  :artifacts/download "Download"
  :artifacts/video " · video"
+ :artifacts/render "Make the video"
+ :artifacts/rendering [:fn/str "Making the video {{:progress}}"]
+ :artifacts/render-failed [:fn/str "The video did not come out: {{:error}}"]
  :artifacts/creation "Your creation"
  :artifacts/empty "What the agent makes for you appears here."
  :artifacts/no-preview "There is no preview for this file. Download it from above."
  :artifacts/starting "Starting this artifact …"
  :artifacts/stopped [:fn/str "This artifact's process stopped (exit {{:exit}}). Its .log says why; pchat starts it again."]
  :artifacts/reload-failed [:fn/str "Loading {{:file}} failed: {{:error}}"]
+
+ :genui/rejected [:fn/str "This part could not be shown: {{:error}}"]
 
  :command/nothing-to-send "Nothing to send."
  :command/no-such-chat "No such chat."

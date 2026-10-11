@@ -170,13 +170,15 @@
             [:audio {:replicant/key (str path mtime)
                      :src (src artifact)
                      :controls true}]]
-    :project (let [{:keys [ready-at exit reload]} (when project (project artifact))]
+    :project (let [{:keys [ready-at exit reload render]} (when project (project artifact))]
                (cond
                  exit [:div.canvas-placeholder [:i18n :artifacts/stopped {:exit exit}]]
                  ready-at (list
                            (when (:error reload)
                              [:p.error [:i18n :artifacts/reload-failed {:file (:file reload)
                                                                         :error (:error reload)}]])
+                           (when (:error render)
+                             [:p.error [:i18n :artifacts/render-failed {:error (:error render)}]])
                            [:ui/canvas {:ui/src (str path-prefix "/" path "/")
                                         :ui/rev ready-at
                                         :ui/title [:i18n :artifacts/creation]}])
@@ -186,7 +188,8 @@
 (defn view
   "The pane: a chooser over the artifacts, open and download links, the
   current one shown by its kind. `:project` in `opts` is the function of a
-  project artifact to its state, see `pchat.projects`."
+  project artifact to its state, see `pchat.projects`, with the state of
+  its render under `:render`, see `pchat.render`."
   ([db]
    (view db {}))
   ([{files :artifacts/list current :artifacts/current} opts]
@@ -205,10 +208,18 @@
             (when (= :video kind) [:i18n :artifacts/video])])])
       (when artifact
         (if (= :project (:kind artifact))
-          [:a.link {:href (str path-prefix "/" (:path artifact) "/")
-                    :target "_blank"
-                    :rel "noopener"}
-           [:i18n :artifacts/open]]
+          (let [{:keys [render]} (when (:project opts) ((:project opts) artifact))]
+            (list
+             [:a.link {:href (str path-prefix "/" (:path artifact) "/")
+                       :target "_blank"
+                       :rel "noopener"}
+              [:i18n :artifacts/open]]
+             ;; The video of the design, made here on a click.
+             (if (and (:started render) (nil? (:exit render)))
+               [:span.rendering [:i18n :artifacts/rendering {:progress (str/replace (or (:progress render) "") #"^frame " "")}]]
+               [:button.link {:on {:click [[:data/command {:command/kind :artifacts/render
+                                                           :command/data {:path (:path artifact)}}]]}}
+                [:i18n :artifacts/render]])))
           (list
            [:a.link {:href (src artifact)
                      :target "_blank"

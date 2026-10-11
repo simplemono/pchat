@@ -7,6 +7,7 @@
   and save, or evaluate it into the running process, and the page beside
   the chat shows it at once. `render!` makes the video file."
   (:require [babashka.nrepl.server :as nrepl]
+            [clojure.string :as str]
             [fnmotion.captions :as captions]
             [fnmotion.core :as fm]
             [fnmotion.render :as render]
@@ -98,12 +99,19 @@
        ;; pchat serves the browser runtime; this page lives under its origin.
        "<script defer src=\"/js/main.js\"></script>"))
 
+(def media
+  "What a frame may refer to by its name: pictures, sounds, videos, fonts."
+  #{"png" "jpg" "jpeg" "gif" "webp" "svg" "avif" "mp3" "wav" "m4a" "ogg" "aac"
+    "mp4" "webm" "mov" "woff" "woff2" "ttf" "otf" "css"})
+
 (defn- file-handler
-  "A file of this directory a frame refers to by its name, an image or a
-  sound; nothing hidden."
+  "A media file of this directory a frame refers to by its name; nothing
+  else, nothing hidden."
   [w]
-  (let [subpath (get-in w [:ring/route-params :*])
-        file (when-not (re-find #"(^|/)\." (str subpath))
+  (let [subpath (str (get-in w [:ring/route-params :*]))
+        extension (str/lower-case (or (second (re-find #"\.([^./]+)$" subpath)) ""))
+        file (when (and (contains? media extension)
+                        (not (re-find #"(^|/)\." subpath)))
                (http/resolve-file "." subpath))]
     (assoc w :ring/response (if file
                               (http/file-response (:ring/request w) file)

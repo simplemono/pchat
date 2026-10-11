@@ -1,0 +1,92 @@
+#!/usr/bin/env bb
+;; bin/music <artifact> "<what it should sound like>" [file]   a piece of music
+;; from a description, by Google's Lyria through OpenRouter
+;; (OPENROUTER_API_KEY): a 30-second clip, a whole song with --long.
+;; Written as artifacts/<artifact>/<file>, music.mp3 unless a file is named;
+;; the path, the length and the cost are printed.
+(require '[babashka.fs :as fs]
+         '[babashka.http-client :as http]
+         '[babashka.process :as process]
+         '[cheshire.core :as json]
+         '[clojure.java.io :as io]
+         '[clojure.string :as str])
+
+(defn fail
+  [message]
+  (println message)
+  (System/exit 1))
+
+(def models
+  {:clip (or (System/getenv "PCHAT_MUSIC_MODEL") "google/lyria-3-clip-preview")
+   :long (or (System/getenv "PCHAT_MUSIC_MODEL_LONG") "google/lyria-3-pro-preview")})
+
+(defn generate!
+  "The mp3 bytes of `prompt` and the cost: OpenRouter streams the audio
+  of a chat completion with the audio modality, base64 in the chunks."
+  [key model prompt]
+  (let [response (http/post "https://openrouter.ai/api/v1/chat/completions"
+                            {:headers {"Authorization" (str "Bearer " key)
+                                       "Content-Type" "application/json"}
+                             :body (json/generate-string {:model model
+                                                          :modalities ["text" "audio"]
+                                                          :audio {:format "mp3"}
+                                                          :stream true
+                                                          :messages [{:role "user" :content prompt}]})
+                             :as :stream
+                             :throw false
+                             :timeout 300000})]
+    (when (not= 200 (:status response))
+      (fail (str "The music service answered " (:status response) ": " (slurp (:body response)))))
+    (with-open [reader (io/reader (:body response))]
+      (loop [lines (line-seq reader)
+             chunks []
+             cost nil]
+        (let [line (first lines)]
+          (cond
+            (or (nil? line) (= "data: [DONE]" line))
+            {:bytes (.decode (java.util.Base64/getDecoder) ^String (apply str chunks))
+             :cost cost}
+
+            (str/starts-with? line "data: ")
+            (let [chunk (json/parse-string (subs line 6) true)
+                  data (some-> chunk :choices first :delta :audio :data)]
+              (when-let [error (:error chunk)]
+                (fail (str "The music service failed: " (:message error))))
+              (recur (rest lines)
+                     (cond-> chunks data (conj data))
+                     (or (get-in chunk [:usage :cost]) cost)))
+
+            :else
+            (recur (rest lines) chunks cost)))))))
+
+(defn seconds-of
+  [file]
+  (when (fs/which "ffprobe")
+    (some-> (process/shell {:out :string :err :string :continue true}
+                           "ffprobe" "-v" "error" "-show_entries" "format=duration" "-of" "csv=p=0" (str file))
+            :out
+            str/trim
+            parse-double
+            Math/round)))
+
+(let [long? (some #{"--long"} *command-line-args*)
+      [artifact prompt file] (remove #{"--long"} *command-line-args*)
+      key (System/getenv "OPENROUTER_API_KEY")
+      dir (fs/file "artifacts" (str artifact))
+      target (fs/file dir (or file "music.mp3"))]
+  (when (or (str/blank? artifact) (str/blank? prompt))
+    (fail "bin/music <artifact> \"<what it should sound like>\" [file] [--long]"))
+  (when-not (fs/directory? dir)
+    (fail (str "artifacts/" artifact " does not exist.")))
+  (when (str/blank? key)
+    (fail "OPENROUTER_API_KEY is not set, so no music."))
+  (let [model (if long? (:long models) (:clip models))
+        {:keys [bytes cost]} (generate! key model prompt)]
+    (when (zero? (count bytes))
+      (fail "The music service sent no audio."))
+    (fs/create-dirs (fs/parent target))
+    (io/copy bytes (fs/file target))
+    (println (str target ": " (count bytes) " bytes"
+                  (when-let [seconds (seconds-of target)] (str ", " seconds " s"))
+                  (when cost (str ", $" cost))
+                  ", model " model))))

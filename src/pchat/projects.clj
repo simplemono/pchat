@@ -1,9 +1,11 @@
 (ns pchat.projects
   "An artifact with a process: a directory under artifacts/ with a bb.edn.
   pchat starts it (`bb -m artifact.main`, PORT and NREPL_PORT in its
-  environment), shows its page in the iframe through a proxy under
-  /artifacts/<name>/, reloads a source file into it over nREPL when the
-  file changes, and writes its output to .log in the directory. The
+  environment) when it is on screen or changed lately, stops it when no
+  one wanted it for a while, shows its page in the iframe through a
+  proxy under /artifacts/<name>/, reloads a source file into it over
+  nREPL when the file changes, and writes its output to .log in the
+  directory. The
   template under resources/pchat/template is the motion design project:
   rframes, fnmotion and its server-side player.
 
@@ -42,6 +44,29 @@
   (with-open [socket (java.net.ServerSocket. 0)]
     (.getLocalPort socket)))
 
+(def idle-ms
+  "A project no one looks at for this long is stopped; it starts again
+  when it is wanted."
+  (* 15 60 1000))
+
+(def recent-ms
+  "A project with a change this recent is wanted: the agent works on it."
+  (* 10 60 1000))
+
+(defn- newest-change
+  [project-dir]
+  (->> (file-seq (io/file project-dir))
+       (filter #(.isFile %))
+       (remove #(str/starts-with? (.getName %) "."))
+       (map #(.lastModified %))
+       (reduce max 0)))
+
+(defn- wanted?
+  "The project on screen, or one that changed lately."
+  [{:keys [db dir]} name now]
+  (or (= name (:artifacts/current @db))
+      (< (- now (newest-change (io/file dir name))) recent-ms)))
+
 (defn- src-mtimes
   [project-dir]
   (into {}
@@ -69,6 +94,7 @@
                              :port port
                              :nrepl-port nrepl-port
                              :started (System/currentTimeMillis)
+                             :last-wanted (System/currentTimeMillis)
                              :mtimes (src-mtimes project-dir)})
     (swap! db assoc-in [:projects name] {:port port
                                          :nrepl-port nrepl-port
@@ -135,7 +161,7 @@
 
 (defn- restart-exited!
   "A project that died comes back, not more often than every ten seconds."
-  [{:keys [procs db] :as handle} name]
+  [{:keys [procs] :as handle} name]
   (let [{:keys [process started]} (get @procs name)]
     (when (and process
                (not (.isAlive (:proc process)))
@@ -143,21 +169,35 @@
       (stop! handle name)
       (start! handle name))))
 
+(defn- stop-idle!
+  "A running project no one wanted for `idle-ms` is stopped: a process
+  and its memory for nothing."
+  [{:keys [procs] :as handle} name now wanted?]
+  (when-let [{:keys [last-wanted]} (get @procs name)]
+    (if wanted?
+      (swap! procs assoc-in [name :last-wanted] now)
+      (when (< idle-ms (- now last-wanted))
+        (stop! handle name)))))
+
 (defn sync!
-  "Starts the projects that appeared, stops the ones that went, notes
-  which are ready, reloads changed sources, restarts the dead."
+  "Starts the projects that are wanted, the one on screen and the ones
+  with recent changes, stops the ones that went or idled, notes which
+  are ready, reloads changed sources, restarts the dead."
   [{:keys [dir procs] :as handle}]
-  (let [current (set (names dir))]
-    (doseq [name current
-            :when (not (contains? @procs name))]
-      (start! handle name))
+  (let [current (set (names dir))
+        now (System/currentTimeMillis)]
     (doseq [name (keys @procs)
             :when (not (contains? current name))]
       (stop! handle name))
-    (doseq [name current]
-      (check-ready! handle name)
-      (reload-changed! handle name)
-      (restart-exited! handle name))))
+    (doseq [name current
+            :let [wanted? (wanted? handle name now)]]
+      (if (contains? @procs name)
+        (do (check-ready! handle name)
+            (reload-changed! handle name)
+            (restart-exited! handle name)
+            (stop-idle! handle name now wanted?))
+        (when wanted?
+          (start! handle name))))))
 
 (defn eval!
   "Evaluates `code` in the project's process."

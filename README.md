@@ -92,7 +92,31 @@ elements with `data-start`, `data-duration`, `data-volume`.
 Needed on the machine: a Chrome (`google-chrome` or `chromium` on the
 PATH, or `CHROME`), ffmpeg, and for the HyperFrames template `npm
 install -g hyperframes @hyperframes/player`. pchat says at start what it
-found; `bb deploy` installs all three on a sprite.
+found; `bb deploy` installs all three on a sprite. "Make the video" in
+the artifacts bar renders the design on screen; a few Chromes work side
+by side (`fnmotion.render`, `:workers`).
+
+### Music and the agent's own UI
+
+`bin/music <name> "<what it should sound like>" [file]` makes a
+30-second piece with Google's Lyria through OpenRouter (about 4 cents,
+`--long` a whole song for 8) into the artifact's folder; the agent
+declares it as a track of the design. The agent shows choices as a part
+of the page: a ```hiccup block in an answer holds EDN hiccup, rendered
+between the markdown (`pchat.genui`), the way json-render does with
+JSON. Only the tags and attributes on the allow-lists get through, a
+file or a link points at this host or at https, `:send "text"` on a
+button sends that text as the person's next message, `:open` shows an
+artifact. A piece of music with a player and a button each is the
+typical block.
+
+### Housekeeping
+
+A chat's name is a field in the header; Delete asks once. The pi
+process of a chat that idles for fifteen minutes is ended and starts
+again on the next message, on the same session; an artifact project
+runs while it is on screen or changed in the last ten minutes, and is
+stopped after fifteen idle minutes.
 
 ### On a sprite
 
@@ -170,5 +194,12 @@ from an artifact project, see "Videos". fnmotion got `fnmotion.render`
 server-side player a stage of the video's size and audio tracks in step
 with the time; pchat got the HyperFrames template, `pchat.tools` for the
 programs on the machine, and the installs in `bb deploy`.
+
+Loose ends closed, 2026-10-11: render workers, "Make the video" in
+the bar, fades in the preview, music through OpenRouter, hiccup blocks
+in answers, rename and delete, idle reapers for pi and the projects,
+the composer one line under the creation on a phone, `<html lang>` and
+the language of a rejection follow the page, EN/DE links in the
+sidebar, tests on GitHub Actions.
 
 Next: automations (a webhook per chat runs a script the agent wrote).

@@ -7,8 +7,8 @@
   (:require [clojure.string :as str]
             [pchat.artifacts :as artifacts]
             [pchat.chat :as chat]
-            [rchat.feed :as feed]
-            [rchat.markdown :as markdown]))
+            [pchat.genui :as genui]
+            [rchat.feed :as feed]))
 
 (def send-actions
   "Sends the draft and the attached images, then clears both."
@@ -68,11 +68,11 @@
     (if handover?
       [:div.item.handover {:replicant/key index}
        [:div.label [:i18n :chat/handover]]
-       [:div.text (markdown/children text)]
+       [:div.text (genui/children text)]
        (when error
          [:p.error error])]
       [:div.item.step {:replicant/key index}
-       [:div.text (markdown/children text)]
+       [:div.text (genui/children text)]
        (when error
          [:p.error error])])
 
@@ -125,19 +125,43 @@
       (some #(when (= :user (:kind %)) (first (str/split-lines (:text %)))) items)
       [:i18n :chat/untitled]))
 
+(defn- delete-controls
+  "Delete asks once: the first click arms it, the second deletes."
+  [{:keys [id]} deleting]
+  (if (= id deleting)
+    [:span.confirm
+     [:i18n :chat/delete-sure]
+     [:button.link.danger {:on {:click [[:data/command {:command/kind :chat/delete
+                                                        :command/data {:id id}}]]}}
+      [:i18n :chat/delete-yes]]
+     [:button.link {:on {:click [[:data/command {:command/kind :chat/keep}]]}}
+      [:i18n :chat/keep]]]
+    [:button.link.delete {:on {:click [[:data/command {:command/kind :chat/delete
+                                                       :command/data {:id id}}]]}}
+     [:i18n :chat/delete]]))
+
 (defn header
-  [{:keys [status cost] :as chat}]
+  "The name of the chat is a field: a change renames it."
+  [{:keys [id status cost name] :as chat} {:keys [deleting]}]
   [:header.bar
    ;; On a phone the sidebar is a drawer; this opens it (see the
    ;; checkbox in `page`).
    [:label.menu {:for "nav" :aria-label [:i18n :page/chats]} "\u2630"]
-   [:h1 (chat-name chat)]
-   [:span.status {:class (name status)}
+   [:h1
+    [:input.title {:replicant/key id
+                   :value (or name "")
+                   :placeholder (chat-name chat)
+                   :title [:i18n :chat/rename-title]
+                   :on {:change [[:data/command {:command/kind :chat/rename
+                                                 :command/data {:id id
+                                                                :name :event/target.value}}]]}}]]
+   [:span.status {:class (clojure.core/name status)}
     (case status
       :working [:i18n :chat/working]
       [:i18n :chat/ready])]
    (when (pos? cost)
-     [:span.spend (format "$%.2f" cost)])])
+     [:span.spend (format "$%.2f" cost)])
+   (delete-controls chat deleting)])
 
 (defn composer
   [{:keys [status]} {:keys [key-missing?]}]
@@ -158,11 +182,23 @@
      [:button.stop {:on {:click [[:data/command {:command/kind :chat/abort}]]}}
       [:i18n :composer/stop]])])
 
+(defn- languages
+  "The languages of the page, the current one marked: a link reloads
+  the page with `?lang=`."
+  [locale]
+  [:nav.languages
+   (for [l [:en :de]]
+     [:a {:href (str "?lang=" (clojure.core/name l))
+          :class (when (= l locale) "current")}
+      (str/upper-case (clojure.core/name l))])])
+
 (defn sidebar
   "The rows are labels of the drawer checkbox: a tap on a phone opens
   the chat and closes the drawer. On a desktop the checkbox changes
-  nothing."
-  [{:keys [chats current]}]
+  nothing. `:locale` in `opts` marks the language of the page."
+  ([db]
+   (sidebar db {}))
+  ([{:keys [chats current]} {:keys [locale]}]
   (let [chats (sort-by #(or (:updated %) 0) > (vals chats))]
     [:aside.sidebar
      [:div.brand "pchat"]
@@ -184,7 +220,8 @@
                                                    :command/data {:id id}}]]}}
           [:span.name (chat-name chat)]
           (when (= :working status)
-            [:span.dot])]])]]))
+            [:span.dot])]])]
+     (languages locale)])))
 
 (defn views
   "On a phone the chat and the card take turns: two radios, the labels
@@ -197,21 +234,21 @@
 (defn page
   "`opts`: `:key-missing?`, `:locale` (the language of the page, see
   `pchat.i18n`) and `:project` (see `pchat.artifacts/view`)."
-  [{:keys [chats current] files :artifacts/list :as db} {:keys [locale] :as opts}]
+  [{:keys [chats current deleting] files :artifacts/list :as db} {:keys [locale] :as opts}]
   (let [chat (get chats current)
         card? (seq files)]
     [:div.pchat {:lang (some-> locale name)}
      ;; The drawer state on a phone, toggled by labels, never rendered
      ;; with :checked so that the person's choice survives a frame.
      [:input#nav.toggle {:type "checkbox"}]
-     (sidebar db)
+     (sidebar db opts)
      [:label.backdrop {:for "nav"}]
      [:div.rchat {:class (when card? "with-card")}
       (when card?
         (list
          [:input#view-chat.toggle {:type "radio" :name "view" :default-checked "true"}]
          [:input#view-made.toggle {:type "radio" :name "view"}]))
-      (header chat)
+      (header chat {:deleting deleting})
       (when card?
         (views))
       [:div.body

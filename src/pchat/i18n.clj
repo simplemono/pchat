@@ -8,8 +8,8 @@
   that the source uses only keys they have.
 
   The locale of a connection comes from its request: `?lang=de` on the
-  page beats the browser's Accept-Language, English when neither names a
-  language we have."
+  page (or on the page a command was posted from) beats the browser's
+  Accept-Language, English when neither names a language we have."
   (:require [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -53,11 +53,20 @@
           second
           str/lower-case))
 
+(defn- referer-query
+  "The query string of the page a request comes from: a command is
+  posted without the page's `?lang=`, the Referer header has it."
+  [request]
+  (some-> (get-in request [:headers "referer"])
+          (str/split #"\?" 2)
+          second))
+
 (defn locale
   "The locale of a ring request, see the namespace."
   [request]
   (let [known (set (map name locales))
-        wanted (cons (query-lang (:query-string request))
+        wanted (cons (query-lang (or (not-empty (:query-string request))
+                                     (referer-query request)))
                      (accepted-languages (get-in request [:headers "accept-language"])))]
     (or (some-> (some known wanted) keyword)
         default-locale)))
