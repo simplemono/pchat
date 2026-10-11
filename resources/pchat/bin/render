@@ -7,6 +7,7 @@
 ;; variables.json of the artifact when there is one.
 (require '[babashka.fs :as fs]
          '[babashka.process :as process]
+         '[clojure.edn :as edn]
          '[clojure.string :as str])
 
 (def chrome-names
@@ -21,6 +22,15 @@
   [message]
   (println message)
   (System/exit 1))
+
+(defn render-task?
+  "Whether the project's bb.edn knows `bb render`: a design made before
+  videos existed does not."
+  [dir]
+  (try
+    (contains? (:tasks (edn/read-string (slurp (str (fs/file dir "bb.edn"))))) 'render)
+    (catch Exception _
+      false)))
 
 (let [[name file] *command-line-args*
       dir (fs/file "artifacts" (str name))
@@ -48,7 +58,9 @@
                                     (concat [(str hyperframes) "render" "." "--output" out "--quiet"]
                                             (when (fs/exists? variables)
                                               ["--variables-file" (str (fs/absolutize variables))]))))
-                         (process/shell {:dir (str dir) :continue true} "bb" "render" out))]
+                         (do (when-not (render-task? dir)
+                               (fail (str "artifacts/" name " was made before videos existed: its bb.edn has no render task. Bring it up to date like .pchat/template/motion (bb.edn with the render task, `size` and `render!` in src/artifact/main.clj), then render again.")))
+                             (process/shell {:dir (str dir) :continue true} "bb" "render" out)))]
     (if (zero? exit)
       (println (str (if file out (str "artifacts/" name ".mp4")) " is ready."))
       (fail "The render failed, see above."))))
