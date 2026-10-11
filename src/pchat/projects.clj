@@ -121,8 +121,10 @@
           (let [{:keys [ex err]} (try
                                    (let [result (nrepl/eval! nrepl-port (str "(load-file " (pr-str file) ")"))]
                                      ;; The new definitions on screen now,
-                                     ;; not at the next interaction.
-                                     (nrepl/eval! nrepl-port "(rframes.sse/refresh-all!)")
+                                     ;; not at the next interaction; a
+                                     ;; project without rframes has no
+                                     ;; connections to refresh.
+                                     (nrepl/eval! nrepl-port "(when-let [refresh (resolve 'rframes.sse/refresh-all!)] (refresh))")
                                      result)
                                    (catch Exception e
                                      {:ex (ex-message e)}))]

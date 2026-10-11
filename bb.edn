@@ -74,7 +74,7 @@
            (println (str "target/pchat.jar, " (quot (fs/size "target/pchat.jar") 1024) " kB")))}
 
   deploy
-  {:doc "bb deploy <sprite>: the jar as the service `pchat` behind the sprite's URL. First time: installs babashka and pi, pushes deploy/start.sh and the local .env plus a PCHAT_TOKEN (never over an .env on the sprite), warms the dependency cache of the artifact projects."
+  {:doc "bb deploy <sprite>: the jar as the service `pchat` behind the sprite's URL. First time: installs babashka, pi, ffmpeg, Google Chrome, fonts and HyperFrames, pushes deploy/start.sh and the local .env plus a PCHAT_TOKEN (never over an .env on the sprite), warms the dependency cache of the artifact projects."
    :task (let [sprite (or (first *command-line-args*)
                           (do (println "Which sprite? bb deploy <name>")
                               (System/exit 1)))
@@ -85,6 +85,7 @@
             (run 'jar)
             (println "Preparing" sprite)
             (remote "mkdir -p ~/pchat/workspace ~/.local/bin; if [ ! -x ~/.local/bin/bb ]; then cd ~ && curl -sLO https://raw.githubusercontent.com/babashka/babashka/master/install && chmod +x install && ./install --dir ~/.local/bin >/dev/null && rm -f install; fi; ~/.local/bin/bb --version; if [ ! -x ~/.local/bin/pi ]; then npm install -g --prefix ~/.local @earendil-works/pi-coding-agent@0.85.1 >/dev/null 2>&1; fi; echo pi $(~/.local/bin/pi --version)")
+            (println (remote "if ! command -v ffmpeg >/dev/null; then sudo apt-get update -qq >/dev/null 2>&1; sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg fonts-noto-core fonts-noto-color-emoji fonts-liberation >/dev/null 2>&1; fi; if ! command -v google-chrome >/dev/null; then cd /tmp && curl -sLO https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ./google-chrome-stable_current_amd64.deb >/dev/null 2>&1; rm -f /tmp/google-chrome-stable_current_amd64.deb; fi; if [ ! -x ~/.local/bin/hyperframes ]; then PUPPETEER_SKIP_DOWNLOAD=1 npm install -g --prefix ~/.local hyperframes@0.8.146 @hyperframes/player@0.8.146 >/dev/null 2>&1; fi; echo \"videos: $(google-chrome --version 2>/dev/null || echo no Chrome), $(ffmpeg -version 2>/dev/null | head -1 | cut -d' ' -f1-3 || echo no ffmpeg), hyperframes $(~/.local/bin/hyperframes --version 2>/dev/null || echo missing)\""))
             (push "deploy/start.sh" "/home/sprite/pchat/start.sh")
             (remote "chmod 700 ~/pchat/start.sh")
             (cond

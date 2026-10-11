@@ -31,6 +31,7 @@
  :artifacts/label "Was wir gemacht haben"
  :artifacts/open "Öffnen"
  :artifacts/download "Herunterladen"
+ :artifacts/video " · Video"
  :artifacts/creation "Dein Werk"
  :artifacts/empty "Was der Agent für dich macht, erscheint hier."
  :artifacts/no-preview "Für diese Datei gibt es keine Vorschau. Lade sie oben herunter."

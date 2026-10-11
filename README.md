@@ -73,6 +73,27 @@ a frame leaves the server. `bb test` checks that the dictionaries have
 the same keys and that the source uses only keys they have. A third
 language is one more file.
 
+### Videos
+
+`bin/render <name>` in the workspace turns an artifact project into
+`artifacts/<name>.mp4`, which shows up beside the chat like any video.
+A motion design renders through `fnmotion.render`: every frame as HTML,
+a headless Chrome screenshots them one after the other at the `size` of
+the design (1080 by 1920 for a story), ffmpeg encodes them and mixes the
+`:audio` tracks of `design.edn` in, `{:src "music.mp3" :volume 0.6
+:fade-out 1}`, with `:start`, `:duration`, `:media-start`, `:fade-in`
+and `:loop?` as needed. The same tracks play in the preview, in step
+with the scrubber. A second template, `bin/new <name> hyperframes`, is a
+[HyperFrames](https://github.com/heygen-com/hyperframes) composition:
+HTML with GSAP in `composition/index.html`, shown in the HyperFrames
+player, rendered by `hyperframes render`, audio declared on `<audio>`
+elements with `data-start`, `data-duration`, `data-volume`.
+
+Needed on the machine: a Chrome (`google-chrome` or `chromium` on the
+PATH, or `CHROME`), ffmpeg, and for the HyperFrames template `npm
+install -g hyperframes @hyperframes/player`. pchat says at start what it
+found; `bb deploy` installs all three on a sprite.
+
 ### On a sprite
 
 ```bash
@@ -142,5 +163,12 @@ sprite resolve their dependencies once, then they start in seconds.
 
 Languages, 2026-10-10: English and German with m1p, chosen per
 connection from the browser or `?lang=`, see "Run it".
+
+Videos, 2026-10-11: `bin/render <name>` makes `artifacts/<name>.mp4`
+from an artifact project, see "Videos". fnmotion got `fnmotion.render`
+(Chrome over the DevTools protocol, ffmpeg, the audio mix) and the
+server-side player a stage of the video's size and audio tracks in step
+with the time; pchat got the HyperFrames template, `pchat.tools` for the
+programs on the machine, and the installs in `bb deploy`.
 
 Next: automations (a webhook per chat runs a script the agent wrote).

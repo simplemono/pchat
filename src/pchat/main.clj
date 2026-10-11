@@ -22,6 +22,7 @@
             [pchat.pi :as pi]
             [pchat.projects :as projects]
             [pchat.session :as session]
+            [pchat.tools :as tools]
             [pchat.view :as view]
             [rchat.auth :as auth]
             [rframes.command :as command]
@@ -69,14 +70,19 @@
                     :bb (or (System/getenv "BB") "bb")}))
 
 (def template-files
-  "The motion project template and the scripts, copied into the
-  workspace at start: .pchat/template/motion/ and bin/."
+  "The project templates and the scripts, copied into the workspace at
+  start: .pchat/template/motion/, .pchat/template/hyperframes/ and bin/."
   ["template/motion/bb.edn"
    "template/motion/design.edn"
    "template/motion/README.md"
    "template/motion/src/artifact/main.clj"
+   "template/hyperframes/bb.edn"
+   "template/hyperframes/README.md"
+   "template/hyperframes/src/artifact/main.clj"
+   "template/hyperframes/composition/index.html"
    "bin/new"
-   "bin/eval"])
+   "bin/eval"
+   "bin/render"])
 
 (defn- install-workspace!
   "The template and the scripts the agent uses, always the ones of this
@@ -185,6 +191,7 @@
                                :provider provider
                                :model model
                                :system-prompt (slurp (io/resource "pchat/prompts/system.md"))
+                               :env (tools/env)
                                :on-event #(on-event id %)})]
         (swap! pis assoc id handle)
         handle)))
@@ -306,5 +313,6 @@
                     (auth/link (str "http://localhost:" port) token)
                     (str "http://localhost:" port))
                   ", " (count (:chats @db)) " chats, the model is " provider "/" model
-                  ", the workspace " (.getCanonicalPath workspace))))
+                  ", the workspace " (.getCanonicalPath workspace)
+                  ", " (tools/report))))
   @(promise))

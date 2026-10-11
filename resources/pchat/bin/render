@@ -1,0 +1,54 @@
+#!/usr/bin/env bb
+;; bin/render <artifact> [file]   the artifact as a video: artifacts/<artifact>.mp4,
+;; or the file named. A motion design (bb.edn with src/artifact/main.clj):
+;; `bb render` in its directory, every frame screenshot by a headless Chrome,
+;; ffmpeg encodes them with the :audio of design.edn mixed in. A HyperFrames
+;; composition (composition/index.html): `hyperframes render`, with the
+;; variables.json of the artifact when there is one.
+(require '[babashka.fs :as fs]
+         '[babashka.process :as process]
+         '[clojure.string :as str])
+
+(def chrome-names
+  ["google-chrome" "google-chrome-stable" "chromium" "chromium-browser" "chrome"])
+
+(defn chrome
+  []
+  (or (not-empty (System/getenv "CHROME"))
+      (some #(some-> (fs/which %) str) chrome-names)))
+
+(defn fail
+  [message]
+  (println message)
+  (System/exit 1))
+
+(let [[name file] *command-line-args*
+      dir (fs/file "artifacts" (str name))
+      out (str (fs/absolutize (fs/file (or file (str "artifacts/" name ".mp4")))))
+      composition (fs/file dir "composition" "index.html")
+      variables (fs/file dir "variables.json")
+      hyperframes (fs/which "hyperframes")]
+  (when (or (str/blank? name) (not (fs/directory? dir)))
+    (fail "bin/render <artifact> [file]: artifacts/<artifact> is a motion design or a HyperFrames composition."))
+  (when-not (chrome)
+    (fail "No Chrome on this machine, so no video: the operator installs google-chrome or chromium."))
+  (when-not (fs/which "ffmpeg")
+    (fail "No ffmpeg on this machine, so no video: the operator installs it."))
+  (let [{:keys [exit]} (if (fs/exists? composition)
+                         (do (when-not hyperframes
+                               (fail "hyperframes is not installed on this machine, so no video: the operator installs it (npm install -g hyperframes @hyperframes/player)."))
+                             (apply process/shell
+                                    {:dir (str (fs/parent composition))
+                                     :continue true
+                                     :extra-env {"HYPERFRAMES_BROWSER_PATH" (chrome)
+                                                 "PRODUCER_HEADLESS_SHELL_PATH" (chrome)
+                                                 "HYPERFRAMES_NO_TELEMETRY" "1"
+                                                 "HYPERFRAMES_SKIP_SKILLS" "1"
+                                                 "PUPPETEER_SKIP_DOWNLOAD" "1"}}
+                                    (concat [(str hyperframes) "render" "." "--output" out "--quiet"]
+                                            (when (fs/exists? variables)
+                                              ["--variables-file" (str (fs/absolutize variables))]))))
+                         (process/shell {:dir (str dir) :continue true} "bb" "render" out))]
+    (if (zero? exit)
+      (println (str (if file out (str "artifacts/" name ".mp4")) " is ready."))
+      (fail "The render failed, see above."))))

@@ -198,8 +198,11 @@
         [:select.artifacts {:value (:path artifact)
                             :on {:change [[:data/command {:command/kind :artifacts/open
                                                           :command/data {:path :event/target.value}}]]}}
-         (for [{:keys [path title]} files]
-           [:option {:value path} title])])
+         (for [{:keys [path title kind]} files]
+           [:option {:value path}
+            title
+            ;; The video of a design shares its name with the design.
+            (when (= :video kind) [:i18n :artifacts/video])])])
       (when artifact
         (if (= :project (:kind artifact))
           [:a.link {:href (str path-prefix "/" (:path artifact) "/")

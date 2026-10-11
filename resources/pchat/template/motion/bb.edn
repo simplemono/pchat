@@ -1,5 +1,6 @@
 ;; This artifact is a small babashka app of its own: pchat starts it with
 ;; `bb -m artifact.main`, PORT and NREPL_PORT set, and shows its page.
+;; `bb render <file.mp4>` makes the video, see artifact.main/render!.
 {:paths ["src"]
  :deps {io.github.simplemono/rframes$server
         {:git/url "https://github.com/simplemono/rframes.git"
@@ -7,4 +8,12 @@
          :deps/root "server"}
         io.github.simplemono/fnmotion
         {:git/url "https://github.com/simplemono/fnmotion.git"
-         :git/sha "451a9a0a39d6dee66c17be98aba358afa3e7554a"}}}
+         :git/sha "dc5621e68b85cd9a9c4941e4c845ea002a7fef8e"}}
+ :tasks
+ {render
+  {:doc "bb render <file.mp4>: the design as a video, with its audio."
+   :task (do (require 'artifact.main)
+             (let [out (or (first *command-line-args*) "render.mp4")
+                   {:keys [frames seconds]} ((resolve 'artifact.main/render!) out)]
+               (println (str out ": " frames " frames in " (Math/round (double seconds)) " s")))
+             (System/exit 0))}}}

@@ -1,0 +1,8 @@
+;; This artifact is a HyperFrames composition: composition/index.html is
+;; the design, this small babashka app shows it in the HyperFrames player
+;; beside the chat. pchat starts it with `bb -m artifact.main`, PORT set.
+{:paths ["src"]
+ :deps {io.github.simplemono/rframes$server
+        {:git/url "https://github.com/simplemono/rframes.git"
+         :git/sha "a0812c6a7506d4986214e9aaa80ffa03f521867c"
+         :deps/root "server"}}}

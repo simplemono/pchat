@@ -33,6 +33,7 @@
  :artifacts/label "What we made"
  :artifacts/open "Open"
  :artifacts/download "Download"
+ :artifacts/video " · video"
  :artifacts/creation "Your creation"
  :artifacts/empty "What the agent makes for you appears here."
  :artifacts/no-preview "There is no preview for this file. Download it from above."
