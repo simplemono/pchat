@@ -107,6 +107,18 @@
     (edn/read-string (slurp state-file))
     {}))
 
+(defn composio-connections
+  "The names of the servers whose last test showed Composio's connection
+   tools: a Storrito agent's own connection, the integrations paragraph
+   of the system prompt is about them."
+  [handle]
+  (->> (read-state handle)
+       (keep (fn [[name {:keys [tools]}]]
+               (when (some #(= "COMPOSIO_MANAGE_CONNECTIONS" %) tools)
+                 name)))
+       (sort)
+       (vec)))
+
 (defn- write-state!
   [{:keys [state-file]} state]
   (write-atomically! state-file (pr-str state)))

@@ -285,13 +285,14 @@
       (recur))))
 
 (defn- system-prompt
-  "system.md, the integrations paragraph when the `storrito` command is
-  installed (the agent must not be told about a command it lacks), and
-  the chat's webhook paragraph."
+  "system.md, the integrations paragraph when a connection with
+  Composio's connection tools exists (a Storrito agent's own), and the
+  chat's webhook paragraph."
   [id]
   (str (slurp (io/resource "pchat/prompts/system.md"))
-       (when (fs/which "storrito")
-         (str "\n\n" (slurp (io/resource "pchat/prompts/integrations.md"))))
+       (when-let [names (seq (mcp/composio-connections connections))]
+         (str "\n\n" (str/replace (slurp (io/resource "pchat/prompts/integrations.md"))
+                                  "<connection>" (str/join ", " names))))
        "\n\n" (hooks/prompt id)))
 
 (defn- ensure-pi!
