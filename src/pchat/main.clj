@@ -12,7 +12,8 @@
   `pchat.chat` plus :id, :name, :created, :updated, :file and :loaded?;
   the list comes from pi's session files, the history of a chat is read
   from its file when it is opened."
-  (:require [clojure.edn :as edn]
+  (:require [babashka.fs :as fs]
+            [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [org.httpkit.server :as server]
@@ -230,6 +231,16 @@
             (println "[artifacts]" (str e)))))
       (recur))))
 
+(defn- system-prompt
+  "system.md, the integrations paragraph when the `storrito` command is
+  installed (the agent must not be told about a command it lacks), and
+  the chat's webhook paragraph."
+  [id]
+  (str (slurp (io/resource "pchat/prompts/system.md"))
+       (when (fs/which "storrito")
+         (str "\n\n" (slurp (io/resource "pchat/prompts/integrations.md"))))
+       "\n\n" (hooks/prompt id)))
+
 (defn- ensure-pi!
   [id]
   (or (get @pis id)
@@ -238,8 +249,7 @@
                                :session-id id
                                :provider provider
                                :model model
-                               :system-prompt (str (slurp (io/resource "pchat/prompts/system.md"))
-                                                   "\n\n" (hooks/prompt id))
+                               :system-prompt (system-prompt id)
                                :env (tools/env)
                                :on-event #(on-event id %)})]
         (swap! pis assoc id (assoc handle :last-event (now)))
