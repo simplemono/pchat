@@ -1,0 +1,113 @@
+#!/usr/bin/env bb
+;; bin/mcp   the connections of this workspace: the MCP servers whose tools
+;; the agent gets, kept in .pi/mcp.json, the file pi reads when a chat's
+;; process starts. Any change counts from the next message on.
+;;
+;;   bin/mcp list                                      what is connected
+;;   bin/mcp add <name> --url <address> [--header "Authorization: Bearer …"]...
+;;                      [--exposure deferred|direct] [--description "…"]
+;;   bin/mcp add <name> --command <program> [--arg <x>]... [--env NAME=value]...
+;;   bin/mcp test <name>                               the tools it offers
+;;   bin/mcp on <name> | off <name>                    keep it, connect it or not
+;;   bin/mcp remove <name>
+;;
+;; A name has letters, digits, - and _. The tools are named
+;; mcp__<name>__<tool>; the agent finds them with tool_search.
+(require '[babashka.classpath :refer [add-classpath]]
+         '[clojure.string :as str])
+
+(add-classpath ".pchat/lib")
+(require '[pchat.mcp :as mcp])
+
+(defn fail
+  [message]
+  (println message)
+  (System/exit 1))
+
+(def handle
+  (mcp/handle {:db (atom {}) :workspace "."}))
+
+(def next-message
+  "The agent has this from its next message on; finish the answer, the person sends the next message, and the tools are there.")
+
+(defn options
+  "--key value pairs; a repeated key collects its values."
+  [args]
+  (loop [args args
+         out {}]
+    (let [[k v & more] args]
+      (cond
+        (nil? k) out
+        (not (str/starts-with? k "--")) (fail (str "Unexpected argument " k))
+        (nil? v) (fail (str k " needs a value"))
+        :else (recur more (update out (keyword (subs k 2)) (fnil conj []) v))))))
+
+(defn reasons
+  [error]
+  (case error
+    :connections/bad-name "The name may have letters, digits, - and _ only."
+    :connections/bad-address "The address must start with https:// or http://, or --command names a program."
+    :connections/exists "There is a connection of that name already; remove it first, or pick another name."
+    (str error)))
+
+(defn print-tools!
+  [name {:keys [tools error]}]
+  (if error
+    (println (str "The test of " name " failed: " error))
+    (do (println (str name " offers " (count tools) " tools:"))
+        (doseq [tool tools]
+          (println (str "  " (mcp/tool-name name tool)))))))
+
+(defn list!
+  []
+  (let [connections (mcp/load! handle)]
+    (if (empty? connections)
+      (println "No connections. bin/mcp add <name> --url <address> adds one.")
+      (doseq [[name {:keys [kind address enabled? exposure secrets tools error]}] connections]
+        (println (str name ": " (if (= :http kind) "address " "program ") address
+                      (when (seq secrets) (str " with " (str/join ", " secrets)))
+                      ", " exposure
+                      (if enabled? "" ", off")
+                      (cond
+                        error (str ", last test failed: " error)
+                        tools (str ", " (count tools) " tools: " (str/join ", " (map #(mcp/tool-name name %) tools)))
+                        :else ", not tested yet")))))))
+
+(defn add!
+  [name args]
+  (let [{:keys [url header command arg env exposure description]} (options args)
+        headers (into {} (keep mcp/parse-header header))
+        env (into {} (keep #(let [[k v] (str/split % #"=" 2)] (when (and (seq k) v) [k v])) env))]
+    (when (and (seq header) (not= (count header) (count headers)))
+      (fail "A header is written as \"Name: value\"."))
+    (when (and url command)
+      (fail "Either --url or --command, not both."))
+    (let [spec {:url (first url)
+                :headers headers
+                :command (first command)
+                :args (vec arg)
+                :env env
+                :exposure (first exposure)
+                :description (first description)}
+          {:keys [error]} (mcp/add! handle name spec)]
+      (when error
+        (fail (reasons error)))
+      (println (str "Added " name "."))
+      (print-tools! name (mcp/test! handle name))
+      (println next-message))))
+
+(let [[command name & args] *command-line-args*]
+  (case command
+    "list" (list!)
+    "add" (if (str/blank? name) (fail "bin/mcp add <name> --url <address> | --command <program>") (add! name args))
+    "test" (if (str/blank? name) (fail "bin/mcp test <name>") (print-tools! name (mcp/test! handle name)))
+    "on" (if (contains? (mcp/servers handle) name)
+           (do (mcp/set-enabled! handle name true) (println (str name " is on. " next-message)))
+           (fail (str "There is no connection " name ".")))
+    "off" (if (contains? (mcp/servers handle) name)
+            (do (mcp/set-enabled! handle name false) (println (str name " is off. " next-message)))
+            (fail (str "There is no connection " name ".")))
+    "remove" (if (contains? (mcp/servers handle) name)
+               (do (mcp/remove! handle name) (println (str "Removed " name ". " next-message)))
+               (fail (str "There is no connection " name ".")))
+    (fail "bin/mcp list | add <name> … | test <name> | on <name> | off <name> | remove <name>")))

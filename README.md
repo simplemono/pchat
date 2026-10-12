@@ -146,6 +146,31 @@ Share in the artifacts bar makes a link anyone can open,
 into a message, the other side sees the video. Stop sharing ends it.
 Projects are not shared, only files (`pchat.share`).
 
+### Connections
+
+Settings, at the bottom of the sidebar, opens the settings in place of
+the chat (the chat stays the current one, Back returns to it); its
+Connections tab lists the MCP servers the agent can use: a service's
+tools over the Model Context Protocol, a calendar, a file store, a
+database. A row per server with its name, address or program, the
+names of its secrets (never their values), how many tools the last
+test found or what went wrong; Test, Turn off, Remove. "Add a
+connection" takes a name, an address (`https://…/mcp`) or a program to
+run, an access token (`Authorization: Bearer …` as a header,
+`NAME=value` for a program's environment), and whether the agent sees
+its tools when it needs them (the default, loaded through pi's
+`tool_search`) or always. "Let the agent set it up" sends the current
+chat (a fresh one when there is none) a message with the name of the
+service and shows the chat: the agent reads the service's documentation, asks for a token
+when one is needed, and sets it up with `bin/mcp add`, `bin/mcp test`,
+`bin/mcp list` and `bin/mcp remove`, the script that edits the same
+file through `.pchat/lib/pchat/mcp.clj`. The file is pi's
+`.pi/mcp.json` in the workspace (mode 600), the results of the tests
+`.pchat/connections.edn`. pi reads the file when a chat's process
+starts, so after a change the idle processes end and the working ones
+when they settle; the next message starts each again on its session
+with the new tools (`pchat.mcp`).
+
 ### Housekeeping
 
 A chat's name is a field in the header; Delete asks once. The pi
