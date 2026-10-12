@@ -23,6 +23,8 @@
  :tool/write "Datei geschrieben"
  :tool/edit "Datei geändert"
  :tool/other [:fn/str "{{:name}} benutzt"]
+ :tool/search "Nach einem Werkzeug gesucht"
+ :tool/connection [:fn/str "{{:tool}} von {{:connection}} benutzt"]
  :tool/running " …"
  :tool/failed " · hat nicht geklappt"
 
@@ -61,6 +63,38 @@
  :hook/runs [:fn/str "{{:count}} Aufrufe"]
  :hook/none "Noch kein Aufruf"
  :hook/ran "Webhook aufgerufen"
+
+ :connections/button "Verbindungen"
+ :connections/explain "Eine Verbindung gibt dem Agenten die Werkzeuge eines Dienstes: ein Kalender, ein Dateispeicher, eine Datenbank, ein Shop. Hier eine anlegen, oder den Agenten herausfinden lassen, wie es geht, und sie einrichten lassen."
+ :connections/none "Noch keine Verbindungen."
+ :connections/next-message "Die Werkzeuge einer geänderten Verbindung hat der Agent ab seiner nächsten Nachricht."
+ :connections/off "aus"
+ :connections/tools [:fn/str "{{:count}} Werkzeuge"]
+ :connections/untested "noch nicht getestet"
+ :connections/testing "wird getestet …"
+ :connections/test "Testen"
+ :connections/turn-off "Ausschalten"
+ :connections/turn-on "Einschalten"
+ :connections/remove "Entfernen"
+ :connections/name "Name"
+ :connections/name-placeholder "Name, z. B. kalender"
+ :connections/address "Adresse oder Programm"
+ :connections/address-placeholder "https://…/mcp oder ein Programm"
+ :connections/secret "Zugang (optional)"
+ :connections/secret-placeholder "Authorization: Bearer … (optional)"
+ :connections/exposure "Wann der Agent die Werkzeuge sieht"
+ :connections/exposure-deferred "Werkzeuge bei Bedarf"
+ :connections/exposure-direct "Werkzeuge immer aufgelistet"
+ :connections/add "Hinzufügen"
+ :connections/agent-explain "Unsicher, wie? Den Dienst nennen und den Agenten herausfinden und einrichten lassen."
+ :connections/agent-placeholder "Der Dienst, z. B. Notion"
+ :connections/agent "Vom Agenten einrichten lassen"
+ :connections/agent-message [:fn/str "Hilf mir, {{:service}} zu verbinden: finde heraus, wie sein MCP-Server erreicht wird, und richte ihn für mich ein. Frag mich, wenn du einen Token brauchst."]
+ :connections/agent-message-blank "Hilf mir, einen Dienst mit diesem Chat zu verbinden: frag mich, welchen, finde heraus, wie sein MCP-Server erreicht wird, und richte ihn für mich ein."
+ :connections/bad-name "Der Name darf nur Buchstaben, Ziffern, - und _ enthalten."
+ :connections/bad-address "Die Adresse muss mit https:// oder http:// beginnen oder ein Programm sein."
+ :connections/bad-secret "Zugang ist eine Header-Zeile wie Authorization: Bearer … oder NAME=wert für ein Programm."
+ :connections/exists "Eine Verbindung mit diesem Namen gibt es schon."
 
  :command/nothing-to-send "Nichts zu senden."
  :command/no-such-chat "Diesen Chat gibt es nicht."

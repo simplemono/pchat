@@ -25,6 +25,8 @@
  :tool/write "Wrote a file"
  :tool/edit "Changed a file"
  :tool/other [:fn/str "Used {{:name}}"]
+ :tool/search "Looked for a tool"
+ :tool/connection [:fn/str "Used {{:tool}} of {{:connection}}"]
  :tool/running " …"
  :tool/failed " · did not work"
 
@@ -63,6 +65,38 @@
  :hook/runs [:fn/str "{{:count}} runs"]
  :hook/none "No runs yet"
  :hook/ran "Webhook ran"
+
+ :connections/button "Connections"
+ :connections/explain "A connection gives the agent the tools of a service: a calendar, a file store, a database, a shop. Add one here, or let the agent find out how and set it up."
+ :connections/none "No connections yet."
+ :connections/next-message "The agent has the tools of a changed connection from its next message on."
+ :connections/off "off"
+ :connections/tools [:fn/str "{{:count}} tools"]
+ :connections/untested "not tested yet"
+ :connections/testing "testing …"
+ :connections/test "Test"
+ :connections/turn-off "Turn off"
+ :connections/turn-on "Turn on"
+ :connections/remove "Remove"
+ :connections/name "Name"
+ :connections/name-placeholder "Name, e.g. calendar"
+ :connections/address "Address or program"
+ :connections/address-placeholder "https://…/mcp, or a program to run"
+ :connections/secret "Access (optional)"
+ :connections/secret-placeholder "Authorization: Bearer … (optional)"
+ :connections/exposure "When the agent sees the tools"
+ :connections/exposure-deferred "Tools when needed"
+ :connections/exposure-direct "Tools always listed"
+ :connections/add "Add"
+ :connections/agent-explain "Not sure how? Name the service and let the agent find out and set it up."
+ :connections/agent-placeholder "The service, e.g. Notion"
+ :connections/agent "Let the agent set it up"
+ :connections/agent-message [:fn/str "Help me connect {{:service}}: find out how its MCP server is reached and set it up for me. Ask me when you need a token."]
+ :connections/agent-message-blank "Help me connect a service to this chat: ask me which one, find out how its MCP server is reached and set it up for me."
+ :connections/bad-name "The name may have letters, digits, - and _ only."
+ :connections/bad-address "The address must start with https:// or http://, or be a program to run."
+ :connections/bad-secret "Access is a header line like Authorization: Bearer …, or NAME=value for a program."
+ :connections/exists "There is a connection of that name already."
 
  :command/nothing-to-send "Nothing to send."
  :command/no-such-chat "No such chat."

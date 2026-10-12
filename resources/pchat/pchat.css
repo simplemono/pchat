@@ -210,6 +210,129 @@
   color: var(--rchat-text);
 }
 
+.pchat .rchat .bar button.link.connections.on {
+  color: var(--rchat-text);
+}
+
+.pchat .rchat .bar button.link.connections.open {
+  text-decoration: underline;
+}
+
+/* The connections panel under the header, see pchat.mcp. */
+.pchat .rchat .connections-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--rchat-line);
+  background: var(--rchat-panel);
+  font-size: 13px;
+  color: var(--rchat-muted);
+}
+
+.pchat .rchat .connections-panel p {
+  margin: 0;
+}
+
+.pchat .rchat .connections-panel .note {
+  font-size: 12px;
+}
+
+.pchat .rchat .connections-panel .connection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--rchat-line);
+}
+
+.pchat .rchat .connections-panel .connection.off {
+  opacity: 0.6;
+}
+
+.pchat .rchat .connections-panel .connection .name {
+  font-weight: 600;
+  color: var(--rchat-text);
+}
+
+.pchat .rchat .connections-panel .connection .address {
+  max-width: 320px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.pchat .rchat .connections-panel .connection .secret {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.pchat .rchat .connections-panel .connection .state.error {
+  color: #e5484d;
+}
+
+.pchat .rchat .connections-panel .add,
+.pchat .rchat .connections-panel .agent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--rchat-line);
+}
+
+.pchat .rchat .connections-panel .agent .explain {
+  flex: 1 1 100%;
+}
+
+.pchat .rchat .connections-panel input,
+.pchat .rchat .connections-panel select {
+  flex: 1 1 140px;
+  min-width: 120px;
+  padding: 4px 8px;
+  border: 1px solid var(--rchat-line);
+  border-radius: 6px;
+  background: var(--rchat-bg);
+  font: inherit;
+  font-size: 12px;
+  color: var(--rchat-text);
+}
+
+.pchat .rchat .connections-panel input.address {
+  flex: 2 1 220px;
+}
+
+.pchat .rchat .connections-panel button {
+  padding: 4px 10px;
+  border: 1px solid var(--rchat-line);
+  border-radius: 6px;
+  background: var(--rchat-bg);
+  color: var(--rchat-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pchat .rchat .connections-panel button.link {
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  color: var(--rchat-muted);
+  font-size: 13px;
+  text-decoration: underline;
+}
+
+.pchat .rchat .connections-panel button.link:hover {
+  color: var(--rchat-text);
+}
+
+.pchat .rchat .connections-panel button.link.danger {
+  color: #e5484d;
+}
+
 .rchat .feed .run .made button.link {
   padding: 0;
   margin-right: 10px;

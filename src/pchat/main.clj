@@ -22,6 +22,7 @@
             [pchat.hooks :as hooks]
             [pchat.i18n :as i18n]
             [pchat.looks :as looks]
+            [pchat.mcp :as mcp]
             [pchat.pi :as pi]
             [pchat.projects :as projects]
             [pchat.render :as render]
@@ -92,6 +93,13 @@
                  :dir (io/file workspace "artifacts")
                  :file (io/file workspace ".pchat" "shares.edn")}))
 
+(declare restart-pis!)
+
+(def connections
+  (mcp/handle {:db db
+               :workspace workspace
+               :on-change (fn [] (restart-pis!))}))
+
 (def template-files
   "The project templates and the scripts, copied into the workspace at
   start: .pchat/template/motion/, .pchat/template/hyperframes/ and bin/."
@@ -109,7 +117,13 @@
    "bin/music"
    "bin/image"
    "bin/voice"
-   "bin/ask"])
+   "bin/ask"
+   "bin/mcp"])
+
+(def lib-files
+  "Namespaces of pchat the scripts load from .pchat/lib: `bin/mcp` edits
+  the connections with the same code as the page."
+  ["mcp.clj"])
 
 (defn- install-workspace!
   "The template and the scripts the agent uses, always the ones of this
@@ -122,7 +136,11 @@
       (io/make-parents target)
       (spit target (slurp (io/resource (str "pchat/" path))))
       (when (str/starts-with? path "bin/")
-        (.setExecutable target true false)))))
+        (.setExecutable target true false))))
+  (doseq [path lib-files]
+    (let [target (io/file workspace ".pchat" "lib" "pchat" path)]
+      (io/make-parents target)
+      (spit target (slurp (io/resource (str "pchat/" path)))))))
 
 (defn- sync-projects!
   "Starts, watches and reloads the artifact projects, once a second."
@@ -204,7 +222,8 @@
 (defn- on-event
   [id event]
   (if (= "exited" (:type event))
-    (swap! pis dissoc id)
+    ;; The handle of the process that ended, not one spawned since.
+    (swap! pis (fn [pis] (if (some-> (get pis id) pi/alive?) pis (dissoc pis id))))
     (swap! pis update id #(some-> % (assoc :last-event (now)))))
   (let [event (cond-> event
                 (:message event) (update :message intern-message))]
@@ -215,7 +234,41 @@
   ;; A tool just ran: what it wrote is on screen right away, the poll
   ;; catches the rest.
   (when (#{"tool_execution_end" "agent_settled"} (:type event))
-    (artifacts/refresh! artifacts)))
+    (artifacts/refresh! artifacts))
+  ;; The connections changed while the agent worked: its process ends
+  ;; now that it is done, the next message starts one that has them.
+  (when (and (= "agent_settled" (:type event))
+             (get-in @pis [id :restart?]))
+    (when-let [handle (get @pis id)]
+      (pi/kill! handle)
+      (swap! pis dissoc id))))
+
+(defn- restart-pis!
+  "The chats' processes read .pi/mcp.json when they start, so after a
+  change the idle ones end here and the working ones when they settle;
+  the next message starts each again on its session."
+  []
+  (doseq [[id handle] @pis]
+    (if (= :working (get-in @db [:chats id :status]))
+      (swap! pis assoc-in [id :restart?] true)
+      (do (pi/kill! handle)
+          (swap! pis dissoc id)))))
+
+(defn- watch-connections!
+  "Once a second: the file the agent's script edits is read again and
+  the processes restarted, as after a change on the page."
+  []
+  (future
+    (loop []
+      (Thread/sleep 1000)
+      (try
+        (when (mcp/changed? connections)
+          (mcp/load! connections)
+          (restart-pis!))
+        (catch Exception e
+          (binding [*out* *err*]
+            (println "[connections]" (str e)))))
+      (recur))))
 
 (defn- poll-artifacts!
   "Looks at the artifacts folder twice a second: the agent writes with
@@ -281,19 +334,24 @@
   [w text]
   (i18n/translate text (i18n/locale (:ring/request w))))
 
+(defn- send!
+  "The text and the images to the current chat's agent."
+  [text images]
+  (let [id (:current @db)
+        p (ensure-pi! id)
+        streaming? (= :working (get-in @db [:chats id :status]))]
+    (pi/prompt! p text streaming? images)))
+
 (defn- send-command
   [w]
   (let [{:keys [text images]} (command/command-data w)
         text (str/trim (str text))
         images (looks/blocks looks-dir (when (sequential? images)
-                                         (keep :name images)))
-        id (:current @db)]
+                                         (keep :name images)))]
     (if (and (str/blank? text) (empty? images))
       (command/rejected w (say w [:i18n :command/nothing-to-send]))
-      (let [p (ensure-pi! id)
-            streaming? (= :working (get-in @db [:chats id :status]))]
-        (pi/prompt! p (if (str/blank? text) "Look at this." text) streaming? images)
-        (command/accepted w)))))
+      (do (send! (if (str/blank? text) "Look at this." text) images)
+          (command/accepted w)))))
 
 (defn- abort-command
   [w]
@@ -424,6 +482,82 @@
     (render/stop! renders path)
     (command/accepted w)))
 
+(defn- connections-toggle-command
+  [w]
+  (swap! db update :connections-open not)
+  (command/accepted w))
+
+(defn- parse-secret
+  "The access line of the form: a header, `Authorization: Bearer …`, for
+  an address, `NAME=value` for a program's environment; {} when empty,
+  nil when it is neither."
+  [line {:keys [url]}]
+  (let [line (str/trim (str line))]
+    (cond
+      (str/blank? line) {}
+      (and url (mcp/parse-header line)) {:headers (into {} [(mcp/parse-header line)])}
+      (and (not url) (re-matches #"[A-Za-z_][A-Za-z0-9_]*=.*" line)) {:env (into {} [(str/split line #"=" 2)])}
+      :else nil)))
+
+(defn- connections-problem
+  "The sentence of the page for what `pchat.mcp/check` found; the keys
+  are literal so that the dictionaries are checked against them."
+  [error]
+  (case error
+    :connections/bad-name [:i18n :connections/bad-name]
+    :connections/bad-secret [:i18n :connections/bad-secret]
+    :connections/exists [:i18n :connections/exists]
+    [:i18n :connections/bad-address]))
+
+(defn- connections-add-command
+  "A connection from the form; tested right away, so that the panel
+  shows its tools."
+  [w]
+  (let [{:keys [name address secret exposure]} (command/command-data w)
+        name (str/trim (str name))
+        address (mcp/parse-address address)
+        secret (parse-secret secret address)
+        spec (merge address secret {:exposure (not-empty (str exposure))})
+        result (if secret
+                 (mcp/add! connections name spec)
+                 {:error :connections/bad-secret})]
+    (if-let [error (:error result)]
+      (command/rejected w (say w (connections-problem error)))
+      (do (future (mcp/test! connections name))
+          (command/accepted w)))))
+
+(defn- connections-test-command
+  [w]
+  (let [{:keys [name]} (command/command-data w)]
+    (future (mcp/test! connections name))
+    (command/accepted w)))
+
+(defn- connections-enable-command
+  [w]
+  (let [{:keys [name enabled?]} (command/command-data w)]
+    (mcp/set-enabled! connections name (boolean enabled?))
+    (command/accepted w)))
+
+(defn- connections-remove-command
+  [w]
+  (let [{:keys [name]} (command/command-data w)]
+    (mcp/remove! connections name)
+    (command/accepted w)))
+
+(defn- connections-agent-command
+  "The person names a service, the agent finds out how it is reached
+  and sets it up: a message to the current chat, in the person's
+  language."
+  [w]
+  (let [{:keys [service]} (command/command-data w)
+        service (str/trim (str service))]
+    (send! (say w (if (str/blank? service)
+                    [:i18n :connections/agent-message-blank]
+                    [:i18n :connections/agent-message {:service service}]))
+           nil)
+    (swap! db dissoc :connections-open)
+    (command/accepted w)))
+
 (defn page-view
   "The page in the language of the connection."
   [w]
@@ -493,7 +627,19 @@
    {:command/kind :artifacts/share
     :command/fn #'share-command}
    {:command/kind :artifacts/unshare
-    :command/fn #'unshare-command}])
+    :command/fn #'unshare-command}
+   {:command/kind :connections/toggle
+    :command/fn #'connections-toggle-command}
+   {:command/kind :connections/add
+    :command/fn #'connections-add-command}
+   {:command/kind :connections/test
+    :command/fn #'connections-test-command}
+   {:command/kind :connections/enable
+    :command/fn #'connections-enable-command}
+   {:command/kind :connections/remove
+    :command/fn #'connections-remove-command}
+   {:command/kind :connections/agent
+    :command/fn #'connections-agent-command}])
 
 (defn get-register
   []
@@ -532,11 +678,13 @@
   (share/load! shares)
   (load-chats!)
   (hooks/load! hooks)
+  (mcp/load! connections)
   (open! (:current @db))
   (artifacts/refresh! artifacts)
   (poll-artifacts!)
   (sync-projects!)
   (reap-idle-pis!)
+  (watch-connections!)
   (.addShutdownHook (Runtime/getRuntime) (Thread. #(do (projects/stop-all! projects)
                                                        (render/stop-all! renders)
                                                        (hooks/stop-all! hooks))))

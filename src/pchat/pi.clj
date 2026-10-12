@@ -18,6 +18,10 @@
            ;; are a developer's, not this chat's.
            "--approve" "--no-extensions" "--no-skills" "--no-prompt-templates"
            "--no-themes" "--no-context-files"
+           ;; --no-extensions drops pi's built-in extensions too; the MCP
+           ;; servers of the workspace (.pi/mcp.json, see pchat.mcp) and
+           ;; tool_search, which loads their tools for the model, come back.
+           "-e" "builtin:mcp" "-e" "builtin:tool-search"
            ;; Absolute: pi resolves it against its own working directory.
            "--session-dir" (.getAbsolutePath (io/file (str session-dir)))
            "--session-id" (str session-id)]

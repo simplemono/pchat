@@ -20,20 +20,25 @@
                   [:store/dissoc :pchat/attachments]]}]])
 
 (defn- tool-label
-  "The row of a tool call, named for a person."
+  "The row of a tool call, named for a person; a tool of a connection,
+  mcp__<connection>__<tool>, by its connection."
   [{:keys [name]}]
-  (case name
-    "bash" [:i18n :tool/bash]
-    "read" [:i18n :tool/read]
-    "write" [:i18n :tool/write]
-    "edit" [:i18n :tool/edit]
-    [:i18n :tool/other {:name name}]))
+  (let [[_ connection tool] (re-matches #"mcp__(.+?)__(.+)" (str name))]
+    (cond
+      (= "bash" name) [:i18n :tool/bash]
+      (= "read" name) [:i18n :tool/read]
+      (= "write" name) [:i18n :tool/write]
+      (= "edit" name) [:i18n :tool/edit]
+      (= "tool_search" name) [:i18n :tool/search]
+      connection [:i18n :tool/connection {:tool tool :connection connection}]
+      :else [:i18n :tool/other {:name name}])))
 
 (defn- tool-detail
   [{:keys [args]}]
   (or (:command args)
       (:path args)
       (:file_path args)
+      (:query args)
       (pr-str args)))
 
 (defn- tool-view
@@ -198,9 +203,104 @@
                                                   :command/data {:id id}}]]}}
        [:i18n :hook/create]]))])
 
+(defn- connections-button
+  [connections connections-open]
+  [:button.link.connections {:class (str (when (some :enabled? (vals connections)) "on")
+                                         (when connections-open " open"))
+                             :on {:click [[:data/command {:command/kind :connections/toggle}]]}}
+   [:i18n :connections/button]])
+
+(defn- connection-row
+  "One connection: what it is, how its last test went, on and off,
+  gone. A secret is named, never shown."
+  [{:keys [name address enabled? secrets tools error testing?]}]
+  [:div.connection {:replicant/key name
+                    :class (when-not enabled? "off")}
+   [:span.name name]
+   [:span.address {:title address} address]
+   (for [secret secrets]
+     [:span.secret (str secret ": ••••")])
+   [:span.state {:class (when error "error")
+                 :title (when (seq tools) (str/join ", " tools))}
+    (cond
+      testing? [:i18n :connections/testing]
+      (not enabled?) [:i18n :connections/off]
+      error error
+      tools [:i18n :connections/tools {:count (count tools)}]
+      :else [:i18n :connections/untested])]
+   [:button.link {:on {:click [[:data/command {:command/kind :connections/test
+                                               :command/data {:name name}}]]}}
+    [:i18n :connections/test]]
+   [:button.link {:on {:click [[:data/command {:command/kind :connections/enable
+                                               :command/data {:name name
+                                                              :enabled? (not enabled?)}}]]}}
+    (if enabled? [:i18n :connections/turn-off] [:i18n :connections/turn-on])]
+   [:button.link.danger {:on {:click [[:data/command {:command/kind :connections/remove
+                                                      :command/data {:name name}}]]}}
+    [:i18n :connections/remove]]])
+
+(defn- connection-form
+  "Name, address or program, an access line; keyed by the number of
+  connections, so that a new one empties the fields."
+  [connections]
+  [:div.add {:replicant/key (str "add-" (count connections))}
+   [:input {:placeholder [:i18n :connections/name-placeholder]
+            :title [:i18n :connections/name]
+            :aria-label [:i18n :connections/name]
+            :on {:input [[:store/assoc :pchat/connection-name :event/target.value]]}}]
+   [:input.address {:placeholder [:i18n :connections/address-placeholder]
+                    :title [:i18n :connections/address]
+                    :aria-label [:i18n :connections/address]
+                    :on {:input [[:store/assoc :pchat/connection-address :event/target.value]]}}]
+   [:input.secret {:placeholder [:i18n :connections/secret-placeholder]
+                   :title [:i18n :connections/secret]
+                   :aria-label [:i18n :connections/secret]
+                   :on {:input [[:store/assoc :pchat/connection-secret :event/target.value]]}}]
+   [:select {:title [:i18n :connections/exposure]
+             :aria-label [:i18n :connections/exposure]
+             :on {:change [[:store/assoc :pchat/connection-exposure :event/target.value]]}}
+    [:option {:value "deferred" :selected true} [:i18n :connections/exposure-deferred]]
+    [:option {:value "direct"} [:i18n :connections/exposure-direct]]]
+   [:button {:on {:click [[:data/command {:command/kind :connections/add
+                                          :command/data {:name [:store/deref :pchat/connection-name]
+                                                         :address [:store/deref :pchat/connection-address]
+                                                         :secret [:store/deref :pchat/connection-secret]
+                                                         :exposure [:store/deref :pchat/connection-exposure]}}
+                           {:on-success [[:store/dissoc :pchat/connection-name]
+                                         [:store/dissoc :pchat/connection-address]
+                                         [:store/dissoc :pchat/connection-secret]]}]]}}
+    [:i18n :connections/add]]])
+
+(defn- agent-form
+  "The service named, the agent finds out the rest."
+  []
+  [:div.agent
+   [:span.explain [:i18n :connections/agent-explain]]
+   [:input {:placeholder [:i18n :connections/agent-placeholder]
+            :aria-label [:i18n :connections/agent-placeholder]
+            :on {:input [[:store/assoc :pchat/connection-service :event/target.value]]}}]
+   [:button {:on {:click [[:data/command {:command/kind :connections/agent
+                                          :command/data {:service [:store/deref :pchat/connection-service]}}
+                           {:on-success [[:store/dissoc :pchat/connection-service]]}]]}}
+    [:i18n :connections/agent]]])
+
+(defn connections-panel
+  "Under the header when opened: the connections, one row each, the
+  form for a new one, and the way to let the agent do it."
+  [connections]
+  [:div.connections-panel
+   [:p.explain [:i18n :connections/explain]]
+   (if (seq connections)
+     (map connection-row (vals connections))
+     [:p.none [:i18n :connections/none]])
+   (when (seq connections)
+     [:p.note [:i18n :connections/next-message]])
+   (connection-form connections)
+   (agent-form)])
+
 (defn header
   "The name of the chat is a field: a change renames it."
-  [{:keys [id status cost name] :as chat} {:keys [deleting hook-open]}]
+  [{:keys [id status cost name] :as chat} {:keys [deleting hook-open connections connections-open]}]
   [:header.bar
    ;; On a phone the sidebar is a drawer; this opens it (see the
    ;; checkbox in `page`).
@@ -219,6 +319,7 @@
       [:i18n :chat/ready])]
    (when (pos? cost)
      [:span.spend (format "$%.2f" cost)])
+   (connections-button connections connections-open)
    (hook-button chat hook-open)
    (delete-controls chat deleting)])
 
@@ -293,7 +394,7 @@
 (defn page
   "`opts`: `:key-missing?`, `:locale` (the language of the page, see
   `pchat.i18n`) and `:project` (see `pchat.artifacts/view`)."
-  [{:keys [chats current deleting hook-open] files :artifacts/list :as db} {:keys [locale] :as opts}]
+  [{:keys [chats current deleting hook-open connections connections-open] files :artifacts/list :as db} {:keys [locale] :as opts}]
   (let [chat (get chats current)
         card? (seq files)]
     [:div.pchat {:lang (some-> locale name)}
@@ -307,7 +408,12 @@
         (list
          [:input#view-chat.toggle {:type "radio" :name "view" :default-checked "true"}]
          [:input#view-made.toggle {:type "radio" :name "view"}]))
-      (header chat {:deleting deleting :hook-open hook-open})
+      (header chat {:deleting deleting
+                    :hook-open hook-open
+                    :connections connections
+                    :connections-open connections-open})
+      (when connections-open
+        (connections-panel connections))
       (when (= current hook-open)
         (hook-panel chat opts))
       (when card?
