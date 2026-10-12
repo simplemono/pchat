@@ -42,7 +42,7 @@
     (defn env-file
       []
       (into {}
-            (for [file [".env"]
+            (for [file [".env" ".env.local"]
                   :when (fs/exists? file)
                   line (str/split-lines (slurp file))
                   :let [line (str/trim (str/replace line (re-pattern "^export\\s+") ""))]
