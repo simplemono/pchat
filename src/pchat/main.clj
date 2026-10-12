@@ -359,18 +359,24 @@
     (pi/abort! p))
   (command/accepted w))
 
+(defn- new!
+  "A fresh chat, the current one, the page back on the chat."
+  []
+  (let [id (str (random-uuid))]
+    (swap! db #(-> % (assoc-in [:chats id] (new-chat id)) (assoc :current id) (dissoc :deleting :hook-open :settings-open)))
+    id))
+
 (defn- new-command
   [w]
-  (let [id (str (random-uuid))]
-    (swap! db #(-> % (assoc-in [:chats id] (new-chat id)) (assoc :current id) (dissoc :deleting :hook-open)))
-    (command/accepted w)))
+  (new!)
+  (command/accepted w))
 
 (defn- open-command
   [w]
   (let [{:keys [id]} (command/command-data w)]
     (if (get-in @db [:chats id])
       (do (open! id)
-          (swap! db dissoc :deleting :hook-open)
+          (swap! db dissoc :deleting :hook-open :settings-open)
           (command/accepted w))
       (command/rejected w (say w [:i18n :command/no-such-chat])))))
 
@@ -482,10 +488,25 @@
     (render/stop! renders path)
     (command/accepted w)))
 
-(defn- connections-toggle-command
+(defn- settings-open-command
+  "The settings in place of the chat; the chat stays current."
   [w]
-  (swap! db update :connections-open not)
+  (swap! db #(-> % (assoc :settings-open true) (dissoc :deleting)))
   (command/accepted w))
+
+(defn- settings-close-command
+  [w]
+  (swap! db dissoc :settings-open)
+  (command/accepted w))
+
+(defn- settings-tab-command
+  "`:tab`, the id of one of `pchat.view/tabs`; another name is ignored."
+  [w]
+  (let [{:keys [tab]} (command/command-data w)
+        tab (keyword (str tab))]
+    (when (some #(= tab (:id %)) view/tabs)
+      (swap! db assoc :settings-tab tab))
+    (command/accepted w)))
 
 (defn- parse-secret
   "The access line of the form: a header, `Authorization: Bearer …`, for
@@ -546,16 +567,19 @@
 
 (defn- connections-agent-command
   "The person names a service, the agent finds out how it is reached
-  and sets it up: a message to the current chat, in the person's
-  language."
+  and sets it up: a message to the current chat, a fresh one when there
+  is none, in the person's language; the settings close so that the
+  person sees the agent at work."
   [w]
   (let [{:keys [service]} (command/command-data w)
         service (str/trim (str service))]
+    (when-not (get-in @db [:chats (:current @db)])
+      (new!))
     (send! (say w (if (str/blank? service)
                     [:i18n :connections/agent-message-blank]
                     [:i18n :connections/agent-message {:service service}]))
            nil)
-    (swap! db dissoc :connections-open)
+    (swap! db dissoc :settings-open)
     (command/accepted w)))
 
 (defn page-view
@@ -628,8 +652,12 @@
     :command/fn #'share-command}
    {:command/kind :artifacts/unshare
     :command/fn #'unshare-command}
-   {:command/kind :connections/toggle
-    :command/fn #'connections-toggle-command}
+   {:command/kind :settings/open
+    :command/fn #'settings-open-command}
+   {:command/kind :settings/close
+    :command/fn #'settings-close-command}
+   {:command/kind :settings/tab
+    :command/fn #'settings-tab-command}
    {:command/kind :connections/add
     :command/fn #'connections-add-command}
    {:command/kind :connections/test

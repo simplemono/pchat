@@ -210,54 +210,124 @@
   color: var(--rchat-text);
 }
 
-.pchat .rchat .bar button.link.connections.on {
-  color: var(--rchat-text);
-}
-
-.pchat .rchat .bar button.link.connections.open {
-  text-decoration: underline;
-}
-
-/* The connections panel under the header, see pchat.mcp. */
-.pchat .rchat .connections-panel {
+/* The settings in place of the chat, opened from the bottom of the
+   sidebar; the Connections tab, see pchat.mcp. */
+.pchat .sidebar .bottom {
+  margin-top: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px 20px;
+  padding-top: 12px;
+  border-top: 1px solid #2a2c33;
+}
+
+.pchat .sidebar .settings {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.pchat .sidebar .settings:hover {
+  background: #1f2128;
+}
+
+.pchat .sidebar .settings.current {
+  background: #272a33;
+  color: #fff;
+}
+
+.pchat .rchat .bar button.link.close {
+  white-space: nowrap;
+}
+
+.pchat .rchat .tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 20px 0;
   border-bottom: 1px solid var(--rchat-line);
-  background: var(--rchat-panel);
-  font-size: 13px;
+}
+
+.pchat .rchat .tabs .tab {
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--rchat-muted);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.pchat .rchat .tabs .tab.current {
+  color: var(--rchat-text);
+  border-bottom-color: var(--rchat-text);
+}
+
+.pchat .rchat .settings {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px 32px;
+}
+
+.pchat .rchat .settings > section {
+  max-width: 720px;
+  font-size: 14px;
   color: var(--rchat-muted);
 }
 
-.pchat .rchat .connections-panel p {
-  margin: 0;
+.pchat .rchat .settings p {
+  margin: 0 0 12px;
 }
 
-.pchat .rchat .connections-panel .note {
+.pchat .rchat .settings .explain {
+  color: var(--rchat-text);
+}
+
+.pchat .rchat .settings .note {
+  margin-top: 8px;
   font-size: 12px;
 }
 
-.pchat .rchat .connections-panel .connection {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 12px;
-  padding: 6px 0;
+.pchat .rchat .settings .list {
   border-top: 1px solid var(--rchat-line);
 }
 
-.pchat .rchat .connections-panel .connection.off {
+.pchat .rchat .settings .list .none {
+  margin: 0;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--rchat-line);
+}
+
+.pchat .rchat .settings .connection {
+  display: flex;
+  align-items: center;
+  gap: 12px 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rchat-line);
+}
+
+.pchat .rchat .settings .connection.off {
   opacity: 0.6;
 }
 
-.pchat .rchat .connections-panel .connection .name {
+.pchat .rchat .settings .connection .about {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pchat .rchat .settings .connection .name {
   font-weight: 600;
   color: var(--rchat-text);
 }
 
-.pchat .rchat .connections-panel .connection .address {
-  max-width: 320px;
+.pchat .rchat .settings .connection .address,
+.pchat .rchat .settings .connection .secret {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -265,72 +335,122 @@
   font-size: 12px;
 }
 
-.pchat .rchat .connections-panel .connection .secret {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
+.pchat .rchat .settings .connection .state {
+  flex: none;
+  max-width: 40%;
+  font-size: 13px;
 }
 
-.pchat .rchat .connections-panel .connection .state.error {
+.pchat .rchat .settings .connection .state.error {
   color: #e5484d;
 }
 
-.pchat .rchat .connections-panel .add,
-.pchat .rchat .connections-panel .agent {
+.pchat .rchat .settings .connection .actions {
+  flex: none;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 8px;
-  padding-top: 6px;
-  border-top: 1px solid var(--rchat-line);
+  gap: 2px;
 }
 
-.pchat .rchat .connections-panel .agent .explain {
-  flex: 1 1 100%;
+.pchat .rchat .settings .box {
+  margin-top: 16px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--rchat-line);
+  border-radius: 10px;
+  background: var(--rchat-panel);
 }
 
-.pchat .rchat .connections-panel input,
-.pchat .rchat .connections-panel select {
-  flex: 1 1 140px;
-  min-width: 120px;
-  padding: 4px 8px;
+.pchat .rchat .settings .box h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--rchat-text);
+}
+
+.pchat .rchat .settings .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.pchat .rchat .settings .field .label {
+  font-size: 13px;
+  color: var(--rchat-text);
+  /* rchat's .label is small capitals; a form label is a word. */
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.pchat .rchat .settings .field .hint {
+  font-size: 12px;
+  color: var(--rchat-muted);
+}
+
+.pchat .rchat .settings input,
+.pchat .rchat .settings select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
   border: 1px solid var(--rchat-line);
   border-radius: 6px;
   background: var(--rchat-bg);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--rchat-text);
 }
 
-.pchat .rchat .connections-panel input.address {
-  flex: 2 1 220px;
+.pchat .rchat .settings input:focus,
+.pchat .rchat .settings select:focus {
+  outline: none;
+  border-color: var(--rchat-muted);
 }
 
-.pchat .rchat .connections-panel button {
-  padding: 4px 10px;
+.pchat .rchat .settings button {
+  padding: 7px 14px;
   border: 1px solid var(--rchat-line);
   border-radius: 6px;
   background: var(--rchat-bg);
   color: var(--rchat-text);
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
 }
 
-.pchat .rchat .connections-panel button.link {
-  padding: 2px 6px;
+.pchat .rchat .settings button:hover {
+  border-color: var(--rchat-muted);
+}
+
+.pchat .rchat .settings button.primary {
+  border-color: var(--rchat-text);
+  background: var(--rchat-text);
+  color: var(--rchat-bg);
+}
+
+.pchat .rchat .settings button.link {
+  padding: 4px 8px;
   border: 0;
   background: none;
   color: var(--rchat-muted);
-  font-size: 13px;
   text-decoration: underline;
 }
 
-.pchat .rchat .connections-panel button.link:hover {
+.pchat .rchat .settings button.link:hover {
   color: var(--rchat-text);
 }
 
-.pchat .rchat .connections-panel button.link.danger {
+.pchat .rchat .settings button.link.danger {
   color: #e5484d;
+}
+
+.pchat .rchat .settings .agent .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pchat .rchat .settings .agent .row input {
+  flex: 1 1 220px;
+  width: auto;
 }
 
 .rchat .feed .run .made button.link {
@@ -353,7 +473,6 @@
 }
 
 .pchat .sidebar .languages {
-  margin-top: auto;
   display: flex;
   gap: 10px;
   padding: 4px 8px;
@@ -573,6 +692,30 @@
 
   .pchat .rchat .canvas-bar .label {
     display: none;
+  }
+
+  .pchat .rchat .tabs {
+    padding: 6px 12px 0;
+  }
+
+  .pchat .rchat .settings {
+    padding: 12px 12px 32px;
+  }
+
+  .pchat .rchat .settings .connection {
+    flex-wrap: wrap;
+  }
+
+  .pchat .rchat .settings .connection .about {
+    flex: 1 1 100%;
+  }
+
+  .pchat .rchat .settings .connection .state {
+    max-width: none;
+  }
+
+  .pchat .rchat .settings .connection .actions {
+    flex-wrap: wrap;
   }
 
   .pchat .rchat .canvas-bar select.artifacts {

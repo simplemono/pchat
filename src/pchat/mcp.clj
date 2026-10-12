@@ -12,7 +12,8 @@
       :connections {name {:name :kind (:http or :stdio) :address
                           :enabled? :exposure :secrets [header or env names]
                           :tools [tool names] :tested ms :error :testing?}}
-      :connections-open  whether the panel is shown"
+      :settings-open     whether the settings are shown in place of the chat,
+      :settings-tab      the tab there (`pchat.view/tabs`)"
   (:require [babashka.http-client :as http]
             [babashka.process :as process]
             [cheshire.core :as json]
