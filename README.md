@@ -120,6 +120,14 @@ of its `SKILL.md`, and a free chat. The pick stays with the chat
   `artifacts/`, `bin/render <name>` makes the video, attached clips are
   under `uploads/`, and skill folders are never changed.
 
+A link can make the pick, for a button elsewhere (on Storrito, "a short
+from a clip"): `/task/<skill>` opens a chat for that skill without the
+picker, `/task/free` a free one. With the token it is
+`/task/<skill>?token=…`; the path survives the redirect that sets the
+cookie, a query would not. The current chat is taken while nothing has
+happened in it, so the same link twice gives one chat; an unknown skill
+shows the picker.
+
 Without `PCHAT_AGENTITOS` there is no picker: every chat is free.
 
 Kinetic shorts from podcast clips are the `kinetic-lyrics` skill: the
