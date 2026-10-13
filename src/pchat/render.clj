@@ -7,15 +7,64 @@
   The db key this namespace owns:
 
       :renders {name {:started ms :progress \"frame 30/180\" :exit n :error \"...\"}}"
-  (:require [babashka.process :as process]
+  (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [clojure.java.io :as io]
             [clojure.string :as str]))
 
+(def video-tools
+  "What a video needs on the machine: ffmpeg, a Chrome, the HyperFrames
+  CLI. Any of the Chrome names bin/render accepts counts."
+  [["ffmpeg" ["ffmpeg"]]
+   ["google-chrome" ["google-chrome" "google-chrome-stable" "chromium" "chromium-browser" "chrome"]]
+   ["hyperframes" ["hyperframes"]]])
+
+(defn- on-path?
+  "Whether an executable of the name is on the PATH of `env` (the
+  render's environment) or of this process."
+  [env name]
+  (let [path (or (get env "PATH") (System/getenv "PATH"))]
+    (boolean (some #(fs/executable? (io/file % name)) (str/split (str path) #":")))))
+
+(defn missing-video-tools
+  "The names of the video tools that are not there."
+  [env]
+  (for [[name executables] video-tools
+        :when (not (some (partial on-path? env) executables))]
+    name))
+
+(defn video-tools-state
+  "What the operator's install left in `markers-dir` (`~/.local` by
+  default): `:installing` while the video tools are being installed,
+  `:failed` with the install's last lines when it failed, `:absent`
+  without a marker."
+  [markers-dir]
+  (let [installing (io/file markers-dir "video-tools-installing")
+        failed (io/file markers-dir "video-tools-failed")]
+    (cond
+      (.isFile installing) {:state :installing}
+      (.isFile failed) {:state :failed :lines (remove str/blank? (str/split-lines (slurp failed)))}
+      :else {:state :absent})))
+
+(defn not-ready-message
+  "Why a render cannot start, or nil when the video tools are there:
+  the words for the person, no stack trace."
+  [missing {:keys [state lines]}]
+  (when (seq missing)
+    (case state
+      :installing "The video tools are still being installed, try again in a few minutes."
+      :failed (str "The video tools could not be installed: " (str/join " / " lines))
+      (str "The video tools are not installed on this machine (" (str/join ", " missing)
+           "), so no video: the operator installs them."))))
+
 (defn handle
   "{:db the app's atom, :workspace the directory bin/render runs in, :bb
-  the babashka executable, :env extra environment for the process}"
+  the babashka executable, :env extra environment for the process,
+  :markers-dir where an install leaves its marker files (`~/.local`)}"
   [opts]
-  (assoc opts :procs (atom {})))
+  (-> opts
+      (update :markers-dir #(or % (io/file (System/getProperty "user.home") ".local")))
+      (assoc :procs (atom {}))))
 
 (defn running?
   [{:keys [procs]} name]
@@ -54,11 +103,24 @@
                                (assoc :error (or (last (remove #(str/starts-with? % "The render failed") lines))
                                                  (str "exit " exit))))))))))))
 
+(defn- refuse!
+  "No process: the render is over before it started, with the message
+  as its error, where the person reads it."
+  [{:keys [db]} name message]
+  (swap! db assoc-in [:renders name] {:started (System/currentTimeMillis)
+                                      :exit 1
+                                      :error message})
+  name)
+
 (defn start!
-  "Starts the render of the project `name`, unless it runs already."
-  [{:keys [db workspace bb env procs] :as handle} name]
+  "Starts the render of the project `name`, unless it runs already or
+  the video tools are not there yet (then the reason is the render's
+  error, see `not-ready-message`)."
+  [{:keys [db workspace bb env procs markers-dir] :as handle} name]
   (when-not (running? handle name)
-    (let [p (process/process [(or bb "bb") "bin/render" (str name)]
+    (if-let [message (not-ready-message (missing-video-tools env) (video-tools-state markers-dir))]
+      (refuse! handle name message)
+      (let [p (process/process [(or bb "bb") "bin/render" (str name)]
                              {:dir (str workspace)
                               :out :stream
                               :err :stream
@@ -77,7 +139,7 @@
           ;; The readers are done with their streams by now, or nearly.
           (Thread/sleep 100)
           (finish! handle name exit @lines)))
-      name)))
+      name))))
 
 (defn stop!
   "Ends a running render; the file it was writing goes with it."
