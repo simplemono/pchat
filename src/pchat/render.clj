@@ -19,7 +19,7 @@
    ["google-chrome" ["google-chrome" "google-chrome-stable" "chromium" "chromium-browser" "chrome"]]
    ["hyperframes" ["hyperframes"]]])
 
-(defn- on-path?
+(defn on-path?
   "Whether an executable of the name is on the PATH of `env` (the
   render's environment) or of this process."
   [env name]

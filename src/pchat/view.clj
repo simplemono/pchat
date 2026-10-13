@@ -436,10 +436,20 @@
    [:label {:for "view-chat"} [:i18n :page/view-chat]]
    [:label {:for "view-made"} [:i18n :page/view-made]]])
 
+(defn setup-banner
+  "Above the chat while the agent's program is not there yet (see
+  `pchat.setup`): being set up, or why it could not be."
+  [{:keys [pi]}]
+  (case (:state pi)
+    :installing [:div.banner.setup [:i18n :setup/banner-installing]]
+    :failed [:div.banner.setup.failed [:i18n :setup/pi-failed {:lines (str/join " / " (:lines pi))}]]
+    :missing [:div.banner.setup.failed [:i18n :setup/pi-missing]]
+    nil))
+
 (defn page
   "`opts`: `:key-missing?`, `:locale` (the language of the page, see
   `pchat.i18n`) and `:project` (see `pchat.artifacts/view`)."
-  [{:keys [chats current deleting hook-open settings-open] files :artifacts/list :as db} {:keys [locale] :as opts}]
+  [{:keys [chats current deleting hook-open settings-open setup] files :artifacts/list :as db} {:keys [locale] :as opts}]
   (let [chat (get chats current)
         card? (seq files)]
     [:div.pchat {:lang (some-> locale name)}
@@ -451,6 +461,7 @@
      (if settings-open
        ;; Keyed apart from the chat: the two share no element.
        [:div.rchat.settings-open {:replicant/key "settings"}
+        (setup-banner setup)
         (settings-view db)]
        [:div.rchat {:replicant/key "chat"
                     :class (when card? "with-card")}
@@ -458,6 +469,7 @@
           (list
            [:input#view-chat.toggle {:type "radio" :name "view" :default-checked "true"}]
            [:input#view-made.toggle {:type "radio" :name "view"}]))
+        (setup-banner setup)
         (header chat {:deleting deleting
                       :hook-open hook-open})
         (when (= current hook-open)

@@ -27,6 +27,7 @@
             [pchat.projects :as projects]
             [pchat.render :as render]
             [pchat.session :as session]
+            [pchat.setup :as setup]
             [pchat.share :as share]
             [pchat.tools :as tools]
             [pchat.view :as view]
@@ -80,6 +81,10 @@
                   :workspace workspace
                   :bb (or (System/getenv "BB") "bb")
                   :env (tools/env)}))
+
+(def setup
+  (setup/handle {:db db
+                 :env (tools/env)}))
 
 (def hooks
   (hooks/handle {:db db
@@ -343,14 +348,36 @@
         streaming? (= :working (get-in @db [:chats id :status]))]
     (pi/prompt! p text streaming? images)))
 
+(defn- keep!
+  "The message of a chat whose agent is not there yet: kept in the
+  chat with the answer that says so, nothing is sent."
+  [text image-urls message]
+  (let [id (:current @db)]
+    (swap! db (fn [db]
+                (-> db
+                    (update-in [:chats id :items] into (setup/refusal-items text image-urls message))
+                    (assoc-in [:chats id :updated] (now)))))))
+
 (defn- send-command
   [w]
   (let [{:keys [text images]} (command/command-data w)
         text (str/trim (str text))
-        images (looks/blocks looks-dir (when (sequential? images)
-                                         (keep :name images)))]
-    (if (and (str/blank? text) (empty? images))
+        names (when (sequential? images)
+                (keep :name images))
+        images (looks/blocks looks-dir names)]
+    (cond
+      (and (str/blank? text) (empty? images))
       (command/rejected w (say w [:i18n :command/nothing-to-send]))
+
+      ;; pi is still being installed on a fresh machine: the message
+      ;; waits in the chat with the reason, see `pchat.setup`.
+      (not (setup/ready? (setup/refresh! setup)))
+      (do (keep! (if (str/blank? text) "Look at this." text)
+                 (map #(str "/looks/" %) names)
+                 (setup/not-ready-message (:pi (:setup @db))))
+          (command/accepted w))
+
+      :else
       (do (send! (if (str/blank? text) "Look at this." text) images)
           (command/accepted w)))))
 
@@ -676,6 +703,7 @@
   ;; project, the files route takes the rest.
   (replicant/expand (concat register
                             command/register
+                            (setup/register setup)
                             (projects/register projects)
                             (artifacts/register artifacts)
                             (looks/register {:db db
@@ -714,6 +742,7 @@
   (sync-projects!)
   (reap-idle-pis!)
   (watch-connections!)
+  (setup/watch! setup)
   (.addShutdownHook (Runtime/getRuntime) (Thread. #(do (projects/stop-all! projects)
                                                        (render/stop-all! renders)
                                                        (hooks/stop-all! hooks))))

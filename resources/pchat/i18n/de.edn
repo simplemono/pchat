@@ -103,6 +103,11 @@
  :connections/bad-secret "Zugang ist eine Header-Zeile wie Authorization: Bearer … oder NAME=wert für ein Programm."
  :connections/exists "Eine Verbindung mit diesem Namen gibt es schon."
 
+ :setup/banner-installing "Dein Assistent wird eingerichtet … noch ein paar Minuten."
+ :setup/pi-installing "Dein Assistent wird noch eingerichtet. Das dauert ein paar Minuten; deine Nachricht bleibt erhalten, schick sie noch einmal, wenn die Einrichtung fertig ist."
+ :setup/pi-failed [:fn/str "Dein Assistent konnte nicht eingerichtet werden: {{:lines}}"]
+ :setup/pi-missing "Der Assistent (pi) ist auf dieser Maschine nicht installiert."
+
  :command/nothing-to-send "Nichts zu senden."
  :command/no-such-chat "Diesen Chat gibt es nicht."
  :command/no-such-artifact "Dieses Artefakt gibt es nicht."}

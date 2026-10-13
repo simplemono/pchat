@@ -105,6 +105,11 @@
  :connections/bad-secret "Access is a header line like Authorization: Bearer …, or NAME=value for a program."
  :connections/exists "There is a connection of that name already."
 
+ :setup/banner-installing "Setting up your assistant … a few more minutes."
+ :setup/pi-installing "Your assistant is still being set up. This takes a few more minutes; your message is kept, send it again when the setup is done."
+ :setup/pi-failed [:fn/str "Your assistant could not be set up: {{:lines}}"]
+ :setup/pi-missing "The assistant (pi) is not installed on this machine."
+
  :command/nothing-to-send "Nothing to send."
  :command/no-such-chat "No such chat."
  :command/no-such-artifact "No such artifact."}
