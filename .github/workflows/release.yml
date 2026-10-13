@@ -1,0 +1,48 @@
+name: Release
+
+# Pushing a tag v<version> publishes the GitHub release with pchat.jar,
+# the app and all its dependencies as one uberjar for babashka, plus
+# its sha256. Machines fetch a pinned version from
+# releases/download/v<version>/pchat.jar, or the newest from
+# releases/latest/download/pchat.jar. The build needs a JDK: the
+# browser bundle is compiled by shadow-cljs and the git dependencies
+# are resolved by bb's deps.clj.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: DeLaGuardo/setup-clojure@13.4
+        with:
+          cli: latest
+          bb: 1.13.226
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+          key: deps-${{ hashFiles('bb.edn', 'deps.edn') }}
+      - name: Build the jar
+        run: bb jar
+      - name: Checksum
+        run: cd target && sha256sum pchat.jar > pchat.jar.sha256
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" target/pchat.jar target/pchat.jar.sha256 \
+            --title "pchat ${GITHUB_REF_NAME}" \
+            --generate-notes

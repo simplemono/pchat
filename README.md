@@ -195,6 +195,13 @@ pushes the jar and restarts the service, about twenty seconds. The
 workspace lives in `/home/sprite/pchat/workspace`, the log in
 `/.sprite/logs/services/pchat.log`.
 
+Releases: pushing a tag `v<version>` builds the jar on GitHub Actions
+and publishes it as a release (`.github/workflows/release.yml`).
+Machines that set themselves up download a pinned version from
+`https://github.com/simplemono/pchat/releases/download/v<version>/pchat.jar`,
+or the newest from `.../releases/latest/download/pchat.jar`; a
+`pchat.jar.sha256` sits next to it.
+
 ## Status
 
 Milestone 1, 2026-10-10: one chat on one pi process. `pchat.pi` spawns
