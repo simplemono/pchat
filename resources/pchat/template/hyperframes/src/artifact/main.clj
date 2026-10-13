@@ -96,6 +96,14 @@
              (str/ends-with? (str file) ".html") (html-response (with-runtime (slurp file)))
              :else (http/file-response (:ring/request w) file)))))
 
+(defn- stills-handler
+  "A picture of the composition at a moment, stills/<t>.png, for the chat."
+  [w]
+  (let [file (http/resolve-file "stills" (get-in w [:ring/route-params :*]))]
+    (assoc w :ring/response (if file
+                              (http/file-response (:ring/request w) file)
+                              http/not-found))))
+
 (defn- vendor-handler
   [relative]
   (fn [w]
@@ -117,6 +125,8 @@
                                                    :body (str (rev))}))}
    {:ring/route [:get "/composition/*"]
     :ring/handler #'composition-handler}
+   {:ring/route [:get "/stills/*"]
+    :ring/handler #'stills-handler}
    {:ring/route [:get "/vendor/hyperframes-player.js"]
     :ring/handler (vendor-handler player-js)}
    {:ring/route [:get "/vendor/hyperframes-runtime.js"]

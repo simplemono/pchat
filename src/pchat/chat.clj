@@ -2,14 +2,15 @@
   "A chat as a value: what the events of its pi process add up to.
   `event` folds one event into the chat, the view renders the chat.
 
-      {:items  [{:kind :user :text ... :images [url ...]}
+      {:items  [{:kind :user :text ... :images [url ...] :media [{:kind :url} ...]}
                 {:kind :assistant :text ... :thinking ... :done? ...}
                 {:kind :tool :id ... :name ... :args ... :result ... :done? ...}
                 {:kind :note :text ...}]
        :status :idle | :working
        :cost   USD so far
        :log    stderr lines of pi, for debugging}"
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [pchat.uploads :as uploads]))
 
 (def empty-chat
   {:items []
@@ -35,6 +36,16 @@
           (comp (filter #(= "image" (:type %)))
                 (keep :url))
           content)))
+
+(defn user-item
+  "The item of a user message: its text without the lines that name
+  attached clips, its images, and the clips as `:media`."
+  [content]
+  (let [text (text-of content)]
+    {:kind :user
+     :text (uploads/without-lines text)
+     :images (images-of content)
+     :media (uploads/attachments text)}))
 
 (defn- last-index
   [items pred]
@@ -67,9 +78,7 @@
     "agent_settled" (assoc chat :status :idle)
     "message_start" (let [{:keys [role content]} (:message e)]
                       (case role
-                        "user" (update chat :items conj {:kind :user
-                                                         :text (text-of content)
-                                                         :images (images-of content)})
+                        "user" (update chat :items conj (user-item content))
                         "assistant" (update chat :items conj {:kind :assistant
                                                               :text ""
                                                               :thinking ""})

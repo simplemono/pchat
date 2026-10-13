@@ -20,6 +20,15 @@
  :chat/model-failed "The model call failed."
  :chat/rejected [:fn/str "That did not go through: {{:error}}"]
 
+ :task/heading "What should this chat do?"
+ :task/free "Free chat"
+ :task/free-summary "No fixed task: pages, pictures, music, motion designs, whatever you ask for."
+ :task/attach-clip "Attach a video or audio file"
+ :task/attach-video "Attach a video"
+ :task/attach-audio "Attach an audio file"
+ :task/attach-image "Attach an image"
+ :task/attach "Attach a file"
+
  :tool/bash "Ran a command"
  :tool/read "Looked at a file"
  :tool/write "Wrote a file"
@@ -33,8 +42,10 @@
  :composer/placeholder "What should we make?"
  :composer/send "Send"
  :composer/stop "Stop"
- :composer/attach "Attach an image, or paste one into the text"
+ :composer/attach "Attach an image, a video or an audio file, or paste an image into the text"
  :composer/remove "Remove"
+ :composer/uploading "Uploading"
+ :composer/upload-failed "The upload failed"
  :composer/key-missing "The API key of the model is not set in the environment of the server."
 
  :artifacts/label "What we made"
@@ -112,4 +123,9 @@
 
  :command/nothing-to-send "Nothing to send."
  :command/no-such-chat "No such chat."
- :command/no-such-artifact "No such artifact."}
+ :command/no-such-artifact "No such artifact."
+ :command/no-such-task "No such task."
+ :command/task-fixed "This chat has started; its task stays. Start a new chat for another one."
+
+ :upload/attached-video [:fn/str "(Attached video: {{:path}})"]
+ :upload/attached-audio [:fn/str "(Attached audio: {{:path}})"]}

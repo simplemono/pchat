@@ -20,7 +20,9 @@
   (testing "the source uses only keys the dictionaries have, with the params they take, and every key"
     (let [problems (analysis/find-interpolation-problems i18n/dictionaries
                                                          (file-seq (io/file "src/pchat"))
-                                                         {:dictionary-ids #{:i18n}})]
+                                                         ;; #js in the browser bundle
+                                                         {:dictionary-ids #{:i18n}
+                                                          :readers {'js identity}})]
       (is (empty? problems) (analysis/format-problems problems)))))
 
 (deftest locale-test

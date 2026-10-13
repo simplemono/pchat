@@ -18,6 +18,15 @@
  :chat/model-failed "Der Aufruf des Modells ist fehlgeschlagen."
  :chat/rejected [:fn/str "Das ist nicht durchgegangen: {{:error}}"]
 
+ :task/heading "Was soll dieser Chat machen?"
+ :task/free "Freier Chat"
+ :task/free-summary "Ohne feste Aufgabe: Seiten, Bilder, Musik, Motion Designs, was immer du dir wünschst."
+ :task/attach-clip "Video oder Audio anhängen"
+ :task/attach-video "Video anhängen"
+ :task/attach-audio "Audio anhängen"
+ :task/attach-image "Bild anhängen"
+ :task/attach "Datei anhängen"
+
  :tool/bash "Befehl ausgeführt"
  :tool/read "Datei angesehen"
  :tool/write "Datei geschrieben"
@@ -31,8 +40,10 @@
  :composer/placeholder "Was sollen wir machen?"
  :composer/send "Senden"
  :composer/stop "Stopp"
- :composer/attach "Ein Bild anhängen oder eins in den Text einfügen"
+ :composer/attach "Ein Bild, ein Video oder eine Tonaufnahme anhängen oder ein Bild in den Text einfügen"
  :composer/remove "Entfernen"
+ :composer/uploading "Lädt hoch"
+ :composer/upload-failed "Hochladen fehlgeschlagen"
  :composer/key-missing "Der API-Schlüssel des Modells ist in der Umgebung des Servers nicht gesetzt."
 
  :artifacts/label "Was wir gemacht haben"
@@ -110,4 +121,9 @@
 
  :command/nothing-to-send "Nichts zu senden."
  :command/no-such-chat "Diesen Chat gibt es nicht."
- :command/no-such-artifact "Dieses Artefakt gibt es nicht."}
+ :command/no-such-artifact "Dieses Artefakt gibt es nicht."
+ :command/no-such-task "Diese Aufgabe gibt es nicht."
+ :command/task-fixed "Dieser Chat hat schon begonnen, seine Aufgabe bleibt. Starte für eine andere einen neuen Chat."
+
+ :upload/attached-video [:fn/str "(Angehängtes Video: {{:path}})"]
+ :upload/attached-audio [:fn/str "(Angehängtes Audio: {{:path}})"]}

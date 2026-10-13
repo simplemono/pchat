@@ -6,10 +6,13 @@
       PCHAT_PROVIDER   default openrouter (OPENROUTER_API_KEY in the environment)
       PCHAT_MODEL      default openai/gpt-6.1-sol
       PCHAT_TOKEN      a secret: the page is behind the link that sets the cookie
+      PCHAT_AGENTITOS  an agentitos checkout: its skills are the tasks a chat can be for
       BB               the babashka executable for the artifact projects, default bb
 
-  The app value: {:chats {id chat} :current id}. A chat is the value of
-  `pchat.chat` plus :id, :name, :created, :updated, :file and :loaded?;
+  The app value: {:chats {id chat} :current id :skills [skill]}. A chat
+  is the value of `pchat.chat` plus :id, :name, :task (the name of its
+  skill, :free, or nil while the person has not picked one), :created,
+  :updated, :file and :loaded?;
   the list comes from pi's session files, the history of a chat is read
   from its file when it is opened."
   (:require [babashka.fs :as fs]
@@ -29,7 +32,9 @@
             [pchat.session :as session]
             [pchat.setup :as setup]
             [pchat.share :as share]
+            [pchat.skills :as skills]
             [pchat.tools :as tools]
+            [pchat.uploads :as uploads]
             [pchat.view :as view]
             [rchat.auth :as auth]
             [rframes.command :as command]
@@ -70,6 +75,11 @@
 
 (def looks-dir
   (io/file workspace ".pchat" "looks"))
+
+(def uploads-dir
+  "The clips the person attaches, where the agent finds them:
+  `uploads/<name>` in its working directory."
+  (io/file workspace "uploads"))
 
 (def projects
   (projects/handle {:db db
@@ -130,6 +140,11 @@
   the connections with the same code as the page."
   ["mcp.clj"])
 
+(def retired-files
+  "Scripts earlier builds installed that are gone: the kinetic engine is a
+  skill now."
+  ["bin/kinetic"])
+
 (defn- install-workspace!
   "The template and the scripts the agent uses, always the ones of this
   build."
@@ -145,7 +160,9 @@
   (doseq [path lib-files]
     (let [target (io/file workspace ".pchat" "lib" "pchat" path)]
       (io/make-parents target)
-      (spit target (slurp (io/resource (str "pchat/" path)))))))
+      (spit target (slurp (io/resource (str "pchat/" path))))))
+  (doseq [path retired-files]
+    (io/delete-file (io/file workspace path) true)))
 
 (defn- sync-projects!
   "Starts, watches and reloads the artifact projects, once a second."
@@ -184,6 +201,21 @@
   (io/make-parents names-file)
   (spit names-file (pr-str names)))
 
+(def tasks-file
+  "The task each chat was started for, {id skill-name-or-:free}."
+  (io/file workspace ".pchat" "tasks.edn"))
+
+(defn- read-tasks
+  []
+  (if (.isFile tasks-file)
+    (edn/read-string (slurp tasks-file))
+    {}))
+
+(defn- write-tasks!
+  [tasks]
+  (io/make-parents tasks-file)
+  (spit tasks-file (pr-str tasks)))
+
 (defn new-chat
   [id]
   (merge chat/empty-chat
@@ -197,9 +229,11 @@
   a fresh chat as the current one when there is none."
   []
   (let [names (read-names)
+        tasks (read-tasks)
         summaries (map (fn [{:keys [id] :as summary}]
                          (cond-> summary
-                           (get names id) (assoc :name (get names id))))
+                           (get names id) (assoc :name (get names id))
+                           (get tasks id) (assoc :task (get tasks id))))
                        (map session/summary (session/files sessions-dir)))]
     (swap! db (fn [db]
                 (let [chats (into (:chats db)
@@ -290,11 +324,14 @@
       (recur))))
 
 (defn- system-prompt
-  "system.md, the integrations paragraph when a connection with
-  Composio's connection tools exists (a Storrito agent's own), and the
-  chat's webhook paragraph."
+  "system.md, the skills paragraph (the chat's task in full, see
+  `pchat.skills/prompt`), the integrations paragraph when a connection
+  with Composio's connection tools exists (a Storrito agent's own), and
+  the chat's webhook paragraph."
   [id]
   (str (slurp (io/resource "pchat/prompts/system.md"))
+       (some->> (skills/prompt (:skills @db) (get-in @db [:chats id :task]))
+                (str "\n\n"))
        (when-let [names (seq (mcp/composio-connections connections))]
          (str "\n\n" (str/replace (slurp (io/resource "pchat/prompts/integrations.md"))
                                   "<connection>" (str/join ", " names))))
@@ -303,12 +340,14 @@
 (defn- ensure-pi!
   [id]
   (or (get @pis id)
-      (let [handle (pi/spawn! {:dir workspace
+      (let [{:keys [skills]} @db
+            handle (pi/spawn! {:dir workspace
                                :session-dir sessions-dir
                                :session-id id
                                :provider provider
                                :model model
                                :system-prompt (system-prompt id)
+                               :skills (skills/paths skills)
                                :env (tools/env)
                                :on-event #(on-event id %)})]
         (swap! pis assoc id (assoc handle :last-event (now)))
@@ -350,35 +389,60 @@
 
 (defn- keep!
   "The message of a chat whose agent is not there yet: kept in the
-  chat with the answer that says so, nothing is sent."
+  chat with the answer that says so, nothing is sent. Its clips show as
+  in a sent message."
   [text image-urls message]
-  (let [id (:current @db)]
+  (let [id (:current @db)
+        [user note] (setup/refusal-items text image-urls message)
+        user (assoc user
+                    :text (uploads/without-lines text)
+                    :media (uploads/attachments text))]
     (swap! db (fn [db]
                 (-> db
-                    (update-in [:chats id :items] into (setup/refusal-items text image-urls message))
+                    (update-in [:chats id :items] into [user note])
                     (assoc-in [:chats id :updated] (now)))))))
+
+(defn- clip-lines
+  "A line for each attached clip that is in the uploads folder, naming
+  its path in the workspace, in the language of the page:
+  \"(Attached video: uploads/ab12.mp4)\"."
+  [w names]
+  (for [name names
+        :let [kind (uploads/kind name)]
+        :when (and kind
+                   (re-matches #"[A-Za-z0-9]+\.[a-z0-9]+" (str name))
+                   (.isFile (io/file uploads-dir (str name))))]
+    (let [path (str "uploads/" name)]
+      (say w (if (= :audio kind)
+               [:i18n :upload/attached-audio {:path path}]
+               [:i18n :upload/attached-video {:path path}])))))
 
 (defn- send-command
   [w]
   (let [{:keys [text images]} (command/command-data w)
-        text (str/trim (str text))
         names (when (sequential? images)
                 (keep :name images))
-        images (looks/blocks looks-dir names)]
+        text (str/trim (str text))
+        clips (clip-lines w names)
+        images (looks/blocks looks-dir (remove uploads/kind names))
+        message (str/trim (cond
+                            (seq clips) (str/join "\n" (cons text clips))
+                            (str/blank? text) "Look at this."
+                            :else text))]
     (cond
-      (and (str/blank? text) (empty? images))
+      (and (str/blank? text) (empty? images) (empty? clips))
       (command/rejected w (say w [:i18n :command/nothing-to-send]))
 
       ;; pi is still being installed on a fresh machine: the message
       ;; waits in the chat with the reason, see `pchat.setup`.
       (not (setup/ready? (setup/refresh! setup)))
-      (do (keep! (if (str/blank? text) "Look at this." text)
-                 (map #(str "/looks/" %) names)
+      (do (keep! message
+                 (map #(str "/looks/" %) (remove uploads/kind names))
                  (setup/not-ready-message (:pi (:setup @db))))
           (command/accepted w))
 
       :else
-      (do (send! (if (str/blank? text) "Look at this." text) images)
+      (do (send! message images)
           (command/accepted w)))))
 
 (defn- abort-command
@@ -398,6 +462,21 @@
   [w]
   (new!)
   (command/accepted w))
+
+(defn- task-command
+  "The task of a new chat: a skill by its name, or :free. Only before
+  the first message, while the chat's pi has not started."
+  [w]
+  (let [{:keys [id task]} (command/command-data w)
+        task (if (= "free" (some-> task name)) :free task)
+        chat (get-in @db [:chats id])]
+    (cond
+      (not chat) (command/rejected w (say w [:i18n :command/no-such-chat]))
+      (or (seq (:items chat)) (get @pis id)) (command/rejected w (say w [:i18n :command/task-fixed]))
+      (not (or (= :free task) (skills/by-name (:skills @db) task))) (command/rejected w (say w [:i18n :command/no-such-task]))
+      :else (do (write-tasks! (assoc (read-tasks) id task))
+                (swap! db assoc-in [:chats id :task] task)
+                (command/accepted w)))))
 
 (defn- open-command
   [w]
@@ -431,6 +510,7 @@
   (when-let [file (get-in @db [:chats id :file])]
     (io/delete-file (io/file file) true))
   (write-names! (dissoc (read-names) id))
+  (write-tasks! (dissoc (read-tasks) id))
   (hooks/forget! hooks id)
   (swap! db (fn [db]
               (let [chats (dissoc (:chats db) id)
@@ -656,6 +736,8 @@
     :command/fn #'abort-command}
    {:command/kind :chat/new
     :command/fn #'new-command}
+   {:command/kind :chat/task
+    :command/fn #'task-command}
    {:command/kind :chat/open
     :command/fn #'open-command}
    {:command/kind :chat/rename
@@ -707,7 +789,9 @@
                             (projects/register projects)
                             (artifacts/register artifacts)
                             (looks/register {:db db
-                                             :looks-dir looks-dir}))))
+                                             :looks-dir looks-dir})
+                            (uploads/register {:dir uploads-dir
+                                               :looks-dir looks-dir}))))
 
 (def open-register
   "The routes outside the token: a share link and a webhook address are
@@ -731,7 +815,9 @@
   (.mkdirs sessions-dir)
   (.mkdirs (:dir artifacts))
   (.mkdirs looks-dir)
+  (.mkdirs uploads-dir)
   (install-workspace!)
+  (swap! db assoc :skills (skills/load-all (skills/checkout)))
   (share/load! shares)
   (load-chats!)
   (hooks/load! hooks)
@@ -749,12 +835,19 @@
   (sse/watch! db)
   (let [port (parse-long (or (System/getenv "PORT") "8080"))
         token (System/getenv "PCHAT_TOKEN")]
-    (server/run-server (handler token) {:port port})
+    ;; http-kit holds a request body in memory: the browser sends a clip
+    ;; in pieces of 8 MB (`pchat.uploads`), this leaves room for a clip
+    ;; of a few dozen MB in one request.
+    (server/run-server (handler token) {:port port
+                                        :max-body (* 64 1024 1024)})
     (println (str "pchat on "
                   (if token
                     (auth/link (str "http://localhost:" port) token)
                     (str "http://localhost:" port))
                   ", " (count (:chats @db)) " chats, the model is " provider "/" model
                   ", the workspace " (.getCanonicalPath workspace)
-                  ", " (tools/report))))
+                  ", " (tools/report)
+                  ", skills: " (if-let [skills (seq (:skills @db))]
+                                 (str (str/join " " (map :name skills)) " from " (skills/checkout))
+                                 "none (PCHAT_AGENTITOS)"))))
   @(promise))

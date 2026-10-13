@@ -56,6 +56,13 @@
                                                  "HYPERFRAMES_SKIP_SKILLS" "1"
                                                  "PUPPETEER_SKIP_DOWNLOAD" "1"}}
                                     (concat [(str hyperframes) "render" "." "--output" out "--quiet"]
+                                            ;; a kinetic short goes to a phone: a bitrate the platforms
+                                            ;; take as it is, not the near-lossless default (settings.json
+                                            ;; by the kinetic-lyrics skill, settings.edn by bin/kinetic before)
+                                            (when (some #(fs/exists? (fs/file dir "source" %)) ["settings.json" "settings.edn"])
+                                              ["--video-bitrate" "6M"])
+                                            ;; e.g. --browser-gpu on a machine with a graphics card
+                                            (some-> (System/getenv "PCHAT_RENDER_ARGS") str/trim not-empty (str/split #"\s+"))
                                             (when (fs/exists? variables)
                                               ["--variables-file" (str (fs/absolutize variables))]))))
                          (do (when-not (render-task? dir)

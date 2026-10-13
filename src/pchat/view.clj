@@ -8,10 +8,12 @@
             [pchat.artifacts :as artifacts]
             [pchat.chat :as chat]
             [pchat.genui :as genui]
+            [pchat.skills :as skills]
             [rchat.feed :as feed]))
 
 (def send-actions
-  "Sends the draft and the attached images, then clears both."
+  "Sends the draft and the attachments, images and clips, then clears
+  both."
   [[:data/command
     {:command/kind :chat/send
      :command/data {:text [:store/deref :pchat/draft]
@@ -55,7 +57,7 @@
          [:pre.output (feed/cut 2000 text)])))])
 
 (defn- item-view
-  [index {:keys [kind text images error handover?] :as item}]
+  [index {:keys [kind text images media error handover?] :as item}]
   (case kind
     :user
     [:div.item.user {:replicant/key index}
@@ -67,7 +69,17 @@
         (for [url images
               :when url]
           [:img {:src url
-                 :loading "lazy"}])])]
+                 :loading "lazy"}])])
+     (when (seq media)
+       [:div.looks.clips
+        (for [{:keys [kind url]} media]
+          (if (= :audio kind)
+            [:audio {:src url
+                     :controls true
+                     :preload "metadata"}]
+            [:video {:src url
+                     :controls true
+                     :preload "metadata"}]))])]
 
     :assistant
     (if handover?
@@ -139,18 +151,66 @@
   "The last runs of the webhook under the chat."
   10)
 
+(def attach-input-id
+  "The id of the composer's file input: a label elsewhere on the page
+  opens the file picker with it."
+  "pchat-attach")
+
+(defn- attach-label
+  "What the button of the intro asks for, by the inputs of the skill."
+  [kinds]
+  (cond
+    (= #{:video :audio} kinds) [:i18n :task/attach-clip]
+    (= #{:video} kinds) [:i18n :task/attach-video]
+    (= #{:audio} kinds) [:i18n :task/attach-audio]
+    (= #{:image} kinds) [:i18n :task/attach-image]
+    :else [:i18n :task/attach]))
+
+(defn intro
+  "The first thing a chat with a task says: the task and what to bring,
+  with a button that opens the file picker when the skill takes files."
+  [skill locale]
+  [:div.item.handover.intro {:replicant/key "intro"}
+   [:div.label (skills/text skill :title locale)]
+   [:p.text (skills/text skill :ask locale)]
+   (when-let [kinds (not-empty (skills/inputs skill))]
+     [:label.attach-big {:for attach-input-id}
+      (attach-label kinds)])])
+
+(defn task-picker
+  "A new chat starts with what it is for: a card for each skill, and a
+  chat without a fixed task."
+  [{:keys [id]} skills locale]
+  (let [pick (fn [task]
+               {:on {:click [[:data/command {:command/kind :chat/task
+                                             :command/data {:id id
+                                                            :task task}}]]}})]
+    [:section.tasks
+     [:h2 [:i18n :task/heading]]
+     [:div.task-list
+      (for [{:keys [name description] :as skill} skills]
+        [:button.task (assoc (pick name) :replicant/key name)
+         [:strong (skills/text skill :title locale)]
+         [:span (or (skills/text skill :summary locale) description)]])
+      [:button.task.free (assoc (pick "free") :replicant/key "free")
+       [:strong [:i18n :task/free]]
+       [:span [:i18n :task/free-summary]]]]]))
+
 (defn feed
-  [{:keys [status runs] :as chat}]
-  [:section.feed {:data-stick-to-end "true"}
-   (->> (with-handover chat)
-        (map-indexed vector)
-        (filter (fn [[_ item]] (shown? item)))
-        (map (fn [[index item]] (item-view index item))))
-   (map run-view (take-last shown-runs runs))
-   (when (= :working status)
-     [:div.item.working {:replicant/key "working"}
-      [:span.dot]
-      [:span [:i18n :chat/working]]])])
+  ([chat]
+   (feed chat nil))
+  ([{:keys [status runs] :as chat} intro]
+   [:section.feed {:data-stick-to-end "true"}
+    intro
+    (->> (with-handover chat)
+         (map-indexed vector)
+         (filter (fn [[_ item]] (shown? item)))
+         (map (fn [[index item]] (item-view index item))))
+    (map run-view (take-last shown-runs runs))
+    (when (= :working status)
+      [:div.item.working {:replicant/key "working"}
+       [:span.dot]
+       [:span [:i18n :chat/working]]])]))
 
 (defn chat-name
   [{:keys [name items]}]
@@ -337,8 +397,9 @@
             tabs)])))
 
 (defn header
-  "The name of the chat is a field: a change renames it."
-  [{:keys [id status cost name] :as chat} {:keys [deleting hook-open]}]
+  "The name of the chat is a field: a change renames it. `:task` is the
+  title of the chat's task, when it has one."
+  [{:keys [id status cost name] :as chat} {:keys [deleting hook-open task]}]
   [:header.bar
    ;; On a phone the sidebar is a drawer; this opens it (see the
    ;; checkbox in `page`).
@@ -351,6 +412,8 @@
                    :on {:change [[:data/command {:command/kind :chat/rename
                                                  :command/data {:id id
                                                                 :name :event/target.value}}]]}}]]
+   (when task
+     [:span.task-chip task])
    [:span.status {:class (clojure.core/name status)}
     (case status
       :working [:i18n :chat/working]
@@ -361,7 +424,8 @@
    (delete-controls chat deleting)])
 
 (defn composer
-  [{:keys [status]} {:keys [key-missing?]}]
+  "`:placeholder` in `opts` is the task's, the general one without."
+  [{:keys [status]} {:keys [key-missing? placeholder]}]
   [:div.composer
    (when key-missing?
      [:p.error [:i18n :composer/key-missing]])
@@ -372,9 +436,12 @@
                   :ui/send-label [:i18n :composer/send]
                   :ui/attach-title [:i18n :composer/attach]
                   :ui/remove-title [:i18n :composer/remove]
+                  :ui/uploading-label [:i18n :composer/uploading]
+                  :ui/failed-label [:i18n :composer/upload-failed]
                   :ui/disabled? (boolean key-missing?)
+                  :ui/attach-id attach-input-id
                   :rows 3
-                  :placeholder [:i18n :composer/placeholder]}]
+                  :placeholder (or placeholder [:i18n :composer/placeholder])}]
    (when (= :working status)
      [:button.stop {:on {:click [[:data/command {:command/kind :chat/abort}]]}}
       [:i18n :composer/stop]])])
@@ -448,9 +515,12 @@
 
 (defn page
   "`opts`: `:key-missing?`, `:locale` (the language of the page, see
-  `pchat.i18n`) and `:project` (see `pchat.artifacts/view`)."
+  `pchat.i18n`) and `:project` (see `pchat.artifacts/view`). A new chat
+  shows the tasks to pick from first, when there are skills."
   [{:keys [chats current deleting hook-open settings-open setup] files :artifacts/list :as db} {:keys [locale] :as opts}]
   (let [chat (get chats current)
+        skill (skills/by-name (:skills db) (:task chat))
+        picking? (and (seq (:skills db)) (nil? (:task chat)) (empty? (:items chat)))
         card? (seq files)]
     [:div.pchat {:lang (some-> locale name)}
      ;; The drawer state on a phone, toggled by labels, never rendered
@@ -471,14 +541,18 @@
            [:input#view-made.toggle {:type "radio" :name "view"}]))
         (setup-banner setup)
         (header chat {:deleting deleting
-                      :hook-open hook-open})
+                      :hook-open hook-open
+                      :task (some-> skill (skills/text :title locale))})
         (when (= current hook-open)
           (hook-panel chat opts))
         (when card?
           (views))
         [:div.body
          [:div.chat
-          (feed chat)
-          (composer chat opts)]
+          (if picking?
+            (task-picker chat (:skills db) locale)
+            (list
+             (feed chat (some-> skill (intro locale)))
+             (composer chat (assoc opts :placeholder (some-> skill (skills/text :placeholder locale))))))]
          (when card?
            [:section.card (artifacts/view db (select-keys opts [:project :share]))])]])]))

@@ -37,23 +37,11 @@
          (map :text)
          (str/join ""))))
 
-(defn- images-of
-  "The URLs of the image blocks, after `pchat.looks/intern`."
-  [content]
-  (if (string? content)
-    []
-    (into []
-          (comp (filter #(= "image" (:type %)))
-                (keep :url))
-          content)))
-
 (defn- message-items
   "The items one message adds, in the order the live events would."
   [{:keys [role content stopReason errorMessage]}]
   (case role
-    "user" [{:kind :user
-             :text (text-of content)
-             :images (images-of content)}]
+    "user" [(chat/user-item content)]
     "assistant" (into [(cond-> {:kind :assistant
                                 :text (text-of content)
                                 :thinking ""

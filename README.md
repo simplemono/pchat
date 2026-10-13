@@ -97,6 +97,41 @@ found; `bb deploy` installs all three on a sprite. "Make the video" in
 the artifacts bar renders the design on screen; a few Chromes work side
 by side (`fnmotion.render`, `:workers`).
 
+### Tasks: skills from agentitos
+
+`PCHAT_AGENTITOS` points at an [agentitos](https://github.com/storrito/agentitos)
+checkout, a folder of skills ([Agent Skills](https://agentskills.io/specification)
+format, a `SKILL.md` each). A new chat starts with the person picking
+what it is for: a card per skill, titled and described by the `metadata`
+of its `SKILL.md`, and a free chat. The pick stays with the chat
+(`.pchat/tasks.edn`) and shapes it:
+
+- **Onboarding:** the chat opens with the skill's `ask` (what to bring)
+  and a button for the file when the skill takes `inputs` (`video`,
+  `audio`, `image`); the composer shows the skill's `placeholder`. Each
+  text has a `-de` variant for German.
+- **The agent:** pi gets every skill with `--skill` (names and
+  descriptions in its prompt, read on demand), and the chat's own skill
+  in full in the system prompt as its task. It uses the others only when
+  they serve the task and points to a new chat for anything else. A free
+  chat follows whichever skill matches the wish.
+- **The contract** (`pchat.skills/prompt`): a skill's HyperFrames work
+  goes into an artifact from `bin/new <name> hyperframes`, files into
+  `artifacts/`, `bin/render <name>` makes the video, attached clips are
+  under `uploads/`, and skill folders are never changed.
+
+Without `PCHAT_AGENTITOS` there is no picker: every chat is free.
+
+Kinetic shorts from podcast clips are the `kinetic-lyrics` skill: the
+person attaches a clip (video or sound, up to 1 GB), the agent makes the
+artifact with `bin/new <name> hyperframes`, runs the skill's
+`tools/short.mjs` step by step (words, who speaks when, its own staging
+as the director, build, QA) and renders with `bin/render`. The skill's
+checkout needs its `npm install`, and for the speakers `.venv` with
+sherpa-onnx and `models/diarize` (see its README).
+The skill's world is drawn on the CPU, so a render needs no graphics card
+(a 30-second short takes a few minutes on 8 cores).
+
 ### Music and the agent's own UI
 
 `bin/music <name> "<what it should sound like>" [file]` makes a
