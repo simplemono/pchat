@@ -129,8 +129,8 @@ artifact with `bin/new <name> hyperframes`, runs the skill's
 as the director, build, QA) and renders with `bin/render`. The skill's
 checkout needs its `npm install`, and for the speakers `.venv` with
 sherpa-onnx and `models/diarize` (see its README).
-`PCHAT_RENDER_ARGS=--browser-gpu` on a machine with a graphics card; the
-three.js world renders in software otherwise, slower.
+The skill's world is drawn on the CPU, so a render needs no graphics card
+(a 30-second short takes a few minutes on 8 cores).
 
 ### Music and the agent's own UI
 
