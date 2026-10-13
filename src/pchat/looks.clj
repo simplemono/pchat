@@ -1,7 +1,8 @@
 (ns pchat.looks
   "The images of a chat as files. The browser uploads what the user pastes,
-  drops or attaches to POST /upload (rchat's handler, content-addressed
-  into the looks directory); a message names them, the server reads the
+  drops or attaches to POST /upload (`pchat.uploads`, which hands images
+  to rchat's handler, content-addressed into the looks directory); a
+  message names them, the server reads the
   files back as the base64 image blocks pi's `prompt` command takes.
 
   pi echoes a user message with the base64 inside, and so does its
@@ -65,10 +66,8 @@
      :mimeType (look/media-type file)}))
 
 (defn register
-  "POST /upload and GET /looks/*."
+  "GET /looks/*; the upload is `pchat.uploads`."
   [{:keys [db looks-dir]}]
-  (into [{:ring/route [:post "/upload"]
-          :ring/handler (fn [w] (upload/handler {:looks-dir looks-dir} w))}]
-        (canvas/register (canvas/canvas {:db db
-                                         :dir looks-dir
-                                         :path path-prefix}))))
+  (canvas/register (canvas/canvas {:db db
+                                   :dir looks-dir
+                                   :path path-prefix})))
