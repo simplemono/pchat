@@ -463,20 +463,68 @@
   (new!)
   (command/accepted w))
 
+(defn- known-task
+  "The task a name stands for: the name of a skill there is, :free for
+  \"free\", else nil."
+  [task]
+  (let [task (some-> task str not-empty)]
+    (cond
+      (= "free" task) :free
+      (skills/by-name (:skills @db) task) task)))
+
+(defn- unstarted?
+  "Whether nothing has happened in the chat yet: no message, no session
+  file, no pi. Only then can its task still be chosen."
+  [id]
+  (let [chat (get-in @db [:chats id])]
+    (and chat
+         (empty? (:items chat))
+         (not (:file chat))
+         (not (get @pis id)))))
+
+(defn- set-task!
+  "The task of the chat, none again with nil."
+  [id task]
+  (if task
+    (do (write-tasks! (assoc (read-tasks) id task))
+        (swap! db assoc-in [:chats id :task] task))
+    (do (write-tasks! (dissoc (read-tasks) id))
+        (swap! db update-in [:chats id] dissoc :task))))
+
 (defn- task-command
   "The task of a new chat: a skill by its name, or :free. Only before
   the first message, while the chat's pi has not started."
   [w]
   (let [{:keys [id task]} (command/command-data w)
-        task (if (= "free" (some-> task name)) :free task)
+        task (known-task task)
         chat (get-in @db [:chats id])]
     (cond
       (not chat) (command/rejected w (say w [:i18n :command/no-such-chat]))
-      (or (seq (:items chat)) (get @pis id)) (command/rejected w (say w [:i18n :command/task-fixed]))
-      (not (or (= :free task) (skills/by-name (:skills @db) task))) (command/rejected w (say w [:i18n :command/no-such-task]))
-      :else (do (write-tasks! (assoc (read-tasks) id task))
-                (swap! db assoc-in [:chats id :task] task)
+      (not (unstarted? id)) (command/rejected w (say w [:i18n :command/task-fixed]))
+      (not task) (command/rejected w (say w [:i18n :command/no-such-task]))
+      :else (do (set-task! id task)
                 (command/accepted w)))))
+
+(defn- task-link
+  "GET /task/<skill> (or /task/free): the way in from elsewhere, e.g. a
+  button on Storrito, to a chat for that task without the picker. The
+  path survives the redirect of a token link (`/task/<skill>?token=…`),
+  a query would not. The current chat is taken while nothing has
+  happened in it, so that opening the link twice gives one chat; else a
+  fresh one. An unknown task leaves the choice to the picker. Then on
+  to the page."
+  [w]
+  (let [task (known-task (get-in w [:ring/route-params :*]))
+        current (:current @db)
+        id (if (and current (unstarted? current))
+             (do (swap! db dissoc :deleting :hook-open :settings-open)
+                 current)
+             (new!))]
+    (set-task! id task)
+    (assoc w :ring/response {:status 302
+                             :headers {"Location" "/"
+                                       "Cache-Control" "no-store"}
+                             :body ""})))
 
 (defn- open-command
   [w]
@@ -730,6 +778,8 @@
     :head head}
    {:replicant/render "/"
     :render/fn #'page-view}
+   {:ring/route [:get "/task/*"]
+    :ring/handler #'task-link}
    {:command/kind :chat/send
     :command/fn #'send-command}
    {:command/kind :chat/abort
