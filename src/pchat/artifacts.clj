@@ -14,7 +14,10 @@
       :artifacts/list       [{:path :kind :title :mtime :size} ...], newest first
       :artifacts/rev        the newest modification time
       :artifacts/current    the path on screen
-      :artifacts/picked-at  when the user picked it, to know what is newer"
+      :artifacts/picked-at  when the user picked it, to know what is newer
+
+  It reads `:renders` (`pchat.render`): a video a render still writes
+  is shown as is, with its progress, and does not take the screen."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [rchat.canvas :as canvas]))
@@ -111,12 +114,31 @@
     {:artifacts/list files
      :artifacts/rev (reduce max 0 (map :mtime files))}))
 
+(defn- render-name
+  "The project whose render writes the video: `story.mp4` is `story`'s
+  (see `pchat.render/output-file`)."
+  [path]
+  (when (str/ends-with? (str path) ".mp4")
+    (subs (str path) 0 (- (count (str path)) 4))))
+
+(defn writing
+  "The render that is still writing the artifact (`pchat.render`: the
+  video of a project while bin/render runs), or nil. Such a file is no
+  news, it changes with every frame."
+  [{:keys [renders]} {:keys [path]}]
+  (when-let [name (render-name path)]
+    (let [render (get renders name)]
+      (when (and (:started render) (nil? (:exit render)))
+        render))))
+
 (defn follow
-  "The artifact on screen after the directory changed: the newest file
-  when it is newer than the user's pick, what they picked while it exists,
-  the newest otherwise."
-  [{:keys [artifacts/current artifacts/picked-at]} {files :artifacts/list}]
-  (let [newest (first files)
+  "The artifact on screen after the directory changed: the newest
+  finished file when it is newer than the user's pick, what they picked
+  while it exists, the newest otherwise. A video a render still writes
+  changes with every frame and does not take the screen by itself; it is
+  news once the render is done (`refollow!`)."
+  [{:keys [artifacts/current artifacts/picked-at] :as db} {files :artifacts/list}]
+  (let [newest (or (first (remove (partial writing db) files)) (first files))
         current (some #(when (= current (:path %)) %) files)]
     (cond
       (nil? newest) nil
@@ -134,6 +156,13 @@
                   (let [db (merge db new-facts)]
                     (assoc db :artifacts/current (follow db new-facts))))))
     new-facts))
+
+(defn refollow!
+  "Moves the screen as after a change of the directory, for news that
+  is no change of a file: a render that is done makes its video the
+  newest finished file."
+  [{:keys [db]}]
+  (swap! db (fn [db] (assoc db :artifacts/current (follow db db)))))
 
 (defn pick!
   [{:keys [db]} path]
@@ -153,7 +182,7 @@
   (str path-prefix "/" path "?rev=" mtime))
 
 (defn- content
-  [{:keys [path kind mtime] :as artifact} {:keys [project]}]
+  [{:keys [path kind mtime] :as artifact} {:keys [project render]}]
   (case kind
     :page [:ui/canvas {:ui/src (str path-prefix "/" path)
                        :ui/rev mtime
@@ -162,10 +191,17 @@
             [:img {:replicant/key path
                    :src (src artifact)
                    :alt (title path)}]]
+    ;; The element stays while a render writes the file (one key, one
+    ;; src): a reload per frame would show nothing but a spinner.
     :video [:div.artifact-media
-            [:video {:replicant/key (str path mtime)
-                     :src (src artifact)
-                     :controls true}]]
+            [:video {:replicant/key path
+                     :src (if render
+                            (str path-prefix "/" path "?rev=" (:started render))
+                            (src artifact))
+                     :controls true}]
+            (when render
+              [:p.rendering
+               [:i18n :artifacts/rendering {:progress (str/replace (or (:progress render) "") #"^frame " "")}]])]
     :audio [:div.artifact-media
             [:audio {:replicant/key (str path mtime)
                      :src (src artifact)
@@ -212,8 +248,10 @@
   `pchat.share`."
   ([db]
    (view db {}))
-  ([{files :artifacts/list current :artifacts/current} opts]
-  (let [artifact (some #(when (= current (:path %)) %) files)]
+  ([{files :artifacts/list current :artifacts/current :as db} opts]
+  (let [artifact (some #(when (= current (:path %)) %) files)
+        opts (cond-> opts
+               artifact (assoc :render (writing db artifact)))]
     [:div.canvas-pane
      [:div.canvas-bar
       [:span.label [:i18n :artifacts/label]]

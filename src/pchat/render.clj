@@ -60,7 +60,9 @@
 (defn handle
   "{:db the app's atom, :workspace the directory bin/render runs in, :bb
   the babashka executable, :env extra environment for the process,
-  :markers-dir where an install leaves its marker files (`~/.local`)}"
+  :markers-dir where an install leaves its marker files (`~/.local`),
+  :on-finish a function of the name, called once a render ended by
+  itself (not after a stop), after its exit is in the db}"
   [opts]
   (-> opts
       (update :markers-dir #(or % (io/file (System/getProperty "user.home") ".local")))
@@ -87,7 +89,7 @@
 (defn- finish!
   "The exit of the process into the db: an error with the last line of
   the output, nothing of it after a stop."
-  [{:keys [db procs]} name exit lines]
+  [{:keys [db procs on-finish]} name exit lines]
   (let [stopped? (get-in @procs [name :stopped?])]
     (swap! procs dissoc name)
     (swap! db update :renders
@@ -101,7 +103,9 @@
                              (assoc :exit exit)
                              (cond-> (not (zero? exit))
                                (assoc :error (or (last (remove #(str/starts-with? % "The render failed") lines))
-                                                 (str "exit " exit))))))))))))
+                                                 (str "exit " exit))))))))))
+    (when (and on-finish (not stopped?))
+      (on-finish name))))
 
 (defn- refuse!
   "No process: the render is over before it started, with the message

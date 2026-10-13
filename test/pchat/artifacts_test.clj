@@ -92,3 +92,62 @@
         (is (some #{:div.canvas-placeholder} (tags (view {:exit 1}))))))
     (testing "nothing yet"
       (is (some #{:div.canvas-placeholder} (tags (artifacts/view {})))))))
+
+(defn- nodes
+  "Every hiccup node of the tree, depth first."
+  [tree]
+  (tree-seq (fn [node] (or (vector? node) (seq? node)))
+            (fn [node] (if (vector? node) (rest node) node))
+            tree))
+
+(defn- find-tag
+  [tree tag]
+  (some #(when (and (vector? %) (= tag (first %))) %) (nodes tree)))
+
+(deftest render-in-progress-test
+  (let [dir (temp-dir)
+        db (atom {})
+        handle (artifacts/handle {:db db :dir dir})
+        now (System/currentTimeMillis)
+        video-of (fn [] (find-tag (artifacts/view @db) :video))]
+    (touch! dir "card/bb.edn" 100)
+    (touch! dir "card/index.html" (- now 60000))
+    (touch! dir "notes.html" (- now 50000))
+    (artifacts/refresh! handle)
+    (artifacts/pick! handle "notes.html")
+    (testing "the video a render writes does not take the screen, tick after tick"
+      (swap! db assoc-in [:renders "card"] {:started now :progress "frame 3/90"})
+      (touch! dir "card.mp4" (+ now 1000))
+      (artifacts/refresh! handle)
+      (is (= "notes.html" (:artifacts/current @db)))
+      (touch! dir "card.mp4" (+ now 2000))
+      (artifacts/refresh! handle)
+      (is (= "notes.html" (:artifacts/current @db)))
+      (is (= "notes.html" (:value (second (find-tag (artifacts/view @db) :select.artifacts))))))
+    (testing "shown while it is written: one element, one src, the progress beside it"
+      (artifacts/pick! handle "card.mp4")
+      (let [[_ {:keys [replicant/key src]}] (video-of)]
+        (is (= "card.mp4" key))
+        (is (= (str "/artifacts/card.mp4?rev=" now) src)))
+      (swap! db assoc-in [:renders "card" :progress] "frame 4/90")
+      (touch! dir "card.mp4" (+ now 3000))
+      (artifacts/refresh! handle)
+      (is (= "card.mp4" (:artifacts/current @db)))
+      (is (= [:video {:replicant/key "card.mp4" :src (str "/artifacts/card.mp4?rev=" now) :controls true}] (video-of)))
+      (is (= [:i18n :artifacts/rendering {:progress "4/90"}] (second (find-tag (artifacts/view @db) :p.rendering)))))
+    (testing "the finished video is news: it takes the screen from the pick made during the render"
+      (artifacts/pick! handle "notes.html")
+      (touch! dir "card.mp4" (+ now 100000))
+      (artifacts/refresh! handle)
+      (is (= "notes.html" (:artifacts/current @db)) "still writing")
+      (swap! db update-in [:renders "card"] #(-> % (dissoc :progress) (assoc :exit 0)))
+      (artifacts/refollow! handle)
+      (is (= "card.mp4" (:artifacts/current @db)))
+      (is (= (str "/artifacts/card.mp4?rev=" (+ now 100000)) (:src (second (video-of)))) "the final file, loaded once")
+      (is (nil? (find-tag (artifacts/view @db) :p.rendering))))
+    (testing "a pick made after the render is done holds"
+      (touch! dir "card.mp4" (- (System/currentTimeMillis) 1))
+      (artifacts/refresh! handle)
+      (artifacts/pick! handle "notes.html")
+      (artifacts/refollow! handle)
+      (is (= "notes.html" (:artifacts/current @db))))))

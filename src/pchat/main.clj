@@ -90,7 +90,10 @@
   (render/handle {:db db
                   :workspace workspace
                   :bb (or (System/getenv "BB") "bb")
-                  :env (tools/env)}))
+                  :env (tools/env)
+                  ;; The finished video is news now, the poll alone would
+                  ;; not notice: the file stopped changing before.
+                  :on-finish (fn [_name] (artifacts/refollow! artifacts))}))
 
 (def setup
   (setup/handle {:db db

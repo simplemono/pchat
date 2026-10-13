@@ -43,3 +43,27 @@
         (is (= "The video tools could not be installed: failed (exit 100): sudo apt-get install: E: Unable to locate package"
                (get-in @db [:renders "card" :error])))
         (is (not (render/running? handle "card")))))))
+
+(deftest on-finish-test
+  (let [tools (temp-dir)
+        workspace (temp-dir)
+        bb (io/file tools "bb")
+        finished (promise)]
+    (doseq [name ["ffmpeg" "google-chrome" "hyperframes"]]
+      (let [file (io/file tools name)]
+        (spit file "#!/bin/sh\n")
+        (.setExecutable file true)))
+    (spit bb "#!/bin/sh\necho 'frame 1/2'\necho 'frame 2/2'\nexit 0\n")
+    (.setExecutable bb true)
+    (let [db (atom {})
+          handle (render/handle {:db db
+                                 :workspace workspace
+                                 :bb (str bb)
+                                 :env {"PATH" tools}
+                                 :markers-dir (temp-dir)
+                                 :on-finish (fn [name] (deliver finished [name (get-in @db [:renders name])]))})]
+      (is (= "card" (render/start! handle "card")))
+      (let [[name render] (deref finished 10000 [:timeout nil])]
+        (is (= "card" name) "told once the render ended")
+        (is (= 0 (:exit render)) "with its exit in the db already")
+        (is (nil? (:progress render)))))))

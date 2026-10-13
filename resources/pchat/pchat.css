@@ -777,6 +777,12 @@
   object-fit: contain;
 }
 
+.rchat .artifact-media .rendering {
+  margin: 0.5rem 0 0;
+  font-size: 13px;
+  color: var(--rchat-muted);
+}
+
 .rchat .artifact-media audio {
   width: 80%;
 }
