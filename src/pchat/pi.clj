@@ -11,11 +11,12 @@
             [clojure.string :as str]))
 
 (defn- args
-  [{:keys [session-dir session-id provider model system-prompt]}]
+  [{:keys [session-dir session-id provider model system-prompt skills]}]
   (cond-> ["pi" "--mode" "rpc"
            ;; rpc has no trust prompt; without --approve pi silently drops
            ;; project-local files. Extensions, skills and context files
-           ;; are a developer's, not this chat's.
+           ;; are a developer's, not this chat's: the chat's skills come
+           ;; as --skill, which loads even with --no-skills.
            "--approve" "--no-extensions" "--no-skills" "--no-prompt-templates"
            "--no-themes" "--no-context-files"
            ;; --no-extensions drops pi's built-in extensions too; the MCP
@@ -27,7 +28,8 @@
            "--session-id" (str session-id)]
     provider (into ["--provider" provider])
     model (into ["--model" model])
-    system-prompt (into ["--system-prompt" system-prompt])))
+    system-prompt (into ["--system-prompt" system-prompt])
+    (seq skills) (into (mapcat (fn [dir] ["--skill" (str dir)]) skills))))
 
 (defn- read-events!
   [stream on-event]
@@ -43,8 +45,8 @@
 (defn spawn!
   "Starts pi for one chat in `dir` and returns the handle. Options: `:dir`,
   `:session-dir`, `:session-id` (a chat id; pi creates or resumes the
-  session file), `:provider`, `:model`, `:system-prompt`, `:env` (extra
-  environment, e.g. the API key), `:on-event`."
+  session file), `:provider`, `:model`, `:system-prompt`, `:skills` (skill
+  folders), `:env` (extra environment, e.g. the API key), `:on-event`."
   [{:keys [dir env on-event] :as opts}]
   (let [p (process/process (args opts)
                            {:dir (str dir)

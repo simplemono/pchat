@@ -780,3 +780,110 @@
 .rchat .artifact-media audio {
   width: 80%;
 }
+
+/* A video or audio file attached to a message: a chip with its name, size
+   and upload progress in the composer, a player under the sent message. */
+.rchat .attachment .clip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 28px 0 10px;
+  border: 1px solid var(--rchat-line);
+  border-radius: 6px;
+  background: var(--rchat-panel);
+  max-width: 320px;
+}
+
+.rchat .attachment .clip .file {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.rchat .attachment .clip small {
+  color: var(--rchat-muted);
+  white-space: nowrap;
+}
+
+.rchat .attachment.failed .clip {
+  border-color: #c0392b;
+}
+
+.rchat .looks.clips video {
+  max-height: 240px;
+  max-width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--rchat-line);
+}
+
+.rchat .looks.clips audio {
+  width: min(100%, 360px);
+}
+
+/* A new chat: the tasks to pick from, a card each. */
+.pchat .tasks {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px 20px;
+}
+
+.pchat .tasks h2 {
+  margin: 0 0 16px;
+  font-size: 20px;
+}
+
+.pchat .task-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.pchat .task {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--rchat-line);
+  border-radius: 10px;
+  background: var(--rchat-panel);
+  color: var(--rchat-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pchat .task:hover {
+  border-color: var(--rchat-accent);
+}
+
+.pchat .task span {
+  color: var(--rchat-muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.pchat .task.free {
+  border-style: dashed;
+}
+
+/* The intro of a chat with a task, and its button for the file. */
+.pchat .intro .attach-big {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--rchat-accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pchat .rchat .bar .task-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--rchat-line);
+  border-radius: 999px;
+  color: var(--rchat-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
