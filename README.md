@@ -135,8 +135,10 @@ person attaches a clip (video or sound, up to 1 GB), the agent makes the
 artifact with `bin/new <name> hyperframes`, runs the skill's
 `tools/short.mjs` step by step (words, who speaks when, its own staging
 as the director, build, QA) and renders with `bin/render`. The skill's
-checkout needs its `npm install`, and for the speakers `.venv` with
-sherpa-onnx and `models/diarize` (see its README).
+checkout needs its `npm install`; the words and who speaks them come
+through OpenRouter with the `OPENROUTER_API_KEY` pchat has, so nothing
+else is installed for them (without a key the skill falls back to
+Parakeet and sherpa-onnx, see its README).
 The skill's world is drawn on the CPU, so a render needs no graphics card
 (a 30-second short takes a few minutes on 8 cores).
 
@@ -234,7 +236,15 @@ The first deploy installs babashka and pi under `~/.local/bin` on the
 sprite, pushes `deploy/start.sh` and the local `.env` with a generated
 `PCHAT_TOKEN` (an `.env` already on the sprite is kept), and warms the
 dependency cache of the artifact projects. Every deploy after that
-pushes the jar and restarts the service, about twenty seconds. The
+pushes the jar and restarts the service, about twenty seconds. Every
+deploy also brings the skills: the last commit of the local
+`PCHAT_AGENTITOS` checkout goes to `/home/sprite/agentitos` (`git
+archive`, so the sprite needs no access to GitHub; uncommitted changes
+stay behind, the deploy says so), `npm ci` runs in a skill only when its
+`package-lock.json` changed, and the sprite's `.env` gets
+`PCHAT_AGENTITOS=/home/sprite/agentitos`. `deploy/start.sh` stays as it
+is, identical with the start script Storrito writes; sprites Storrito
+sets up get their skills from Storrito. The
 workspace lives in `/home/sprite/pchat/workspace`, the log in
 `/.sprite/logs/services/pchat.log`.
 
