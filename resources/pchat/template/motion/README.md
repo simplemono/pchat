@@ -20,7 +20,9 @@ shows its page beside the chat; the person sees every change at once.
   An image a frame shows by its file name lives here as well.
 - The video: `bin/render <name>` from the workspace, `artifacts/<name>.mp4`,
   thirty frames a second at `size`. Every frame is screenshot by a
-  headless Chrome, ffmpeg encodes them.
+  headless Chrome, ffmpeg encodes them. The preview plays the design
+  live, so render only when the file itself is needed (the person asks
+  for it, or it is posted somewhere), not after every change.
 - fnmotion is at hand as `fm` (interpolate, progress, lerp, spring,
   easings such as cubic-out, px, pct), `tl` (scene, still, sequence,
   parallel, at) and `captions` (captions, at, word-at over words with
