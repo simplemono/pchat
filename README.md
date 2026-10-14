@@ -241,9 +241,18 @@ workspace lives in `/home/sprite/pchat/workspace`, the log in
 Releases: pushing a tag `v<version>` builds the jar on GitHub Actions
 and publishes it as a release (`.github/workflows/release.yml`).
 Machines that set themselves up download a pinned version from
-`https://github.com/simplemono/pchat/releases/download/v<version>/pchat.jar`,
+`https://github.com/storrito/pchat/releases/download/v<version>/pchat.jar`,
 or the newest from `.../releases/latest/download/pchat.jar`; a
 `pchat.jar.sha256` sits next to it.
+
+Updates: a running pchat looks the newest release up once a day and
+offers it as a banner; the person's click downloads the jar, checks it
+with `--version`, waits until no chat works and no video renders, puts
+it in place and ends the process with exit code 75, on which
+`deploy/start.sh` starts the new jar again (`pchat.update`). The banner
+appears only when `PCHAT_JAR` is set, which that start script does: a
+pchat started any other way, or by a start script without the restart
+loop, is never offered an update, since nothing would start it again.
 
 ## Status
 

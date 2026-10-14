@@ -69,6 +69,12 @@
   (is (= "https://github.com/storrito/pchat/releases/download/v0.1.4/pchat.jar"
          (update/download-url "https://github.com/storrito/pchat/releases/latest" "0.1.4"))))
 
+(deftest running-jar-test
+  (testing "only PCHAT_JAR names a jar to replace; without it there is no banner"
+    (is (nil? (update/running-jar nil)))
+    (is (nil? (update/running-jar "")))
+    (is (= "pchat.jar" (.getName (update/running-jar "/home/sprite/pchat/pchat.jar"))))))
+
 (deftest check-test
   (with-stub [base requests]
     (testing "a newer release is offered when a jar runs"

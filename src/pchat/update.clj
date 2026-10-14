@@ -12,10 +12,12 @@
   the new jar on that code, and the page is back in seconds. Nothing
   updates by itself.
 
-  The running jar is `PCHAT_JAR`, or the class path when that is one
-  jar (`bb pchat.jar`); started from the sources there is nothing to
-  replace and no banner. `PCHAT_UPDATE_URL` points the lookup at
-  another address (the download comes from the same base), for tests.
+  The running jar is `PCHAT_JAR`, which the start script sets next to
+  the restart on `exit-code`; a pchat started any other way (from the
+  sources, `bb pchat.jar` by hand, an older start script without the
+  restart) shows no banner, since nothing would start it again.
+  `PCHAT_UPDATE_URL` points the lookup at another address (the download
+  comes from the same base), for tests.
 
   The db key this namespace owns:
 
@@ -49,14 +51,11 @@
       "dev"))
 
 (defn running-jar
-  "The jar this process runs from, nil from the sources."
-  []
-  (let [path (or (System/getenv "PCHAT_JAR")
-                 (System/getProperty "java.class.path"))]
-    (when (and (seq (str path))
-               (str/ends-with? path ".jar")
-               (not (str/includes? path (System/getProperty "path.separator"))))
-      (io/file path))))
+  "The jar to replace, from `PCHAT_JAR` as the start script sets it;
+  nil without it, and then nothing is offered."
+  [path]
+  (when (seq (str path))
+    (io/file path)))
 
 (defn download-url
   "The release's jar, from the same base as `latest-url`."
@@ -74,7 +73,7 @@
           :idle? (constantly true)
           :exit! (fn [code] (System/exit code))
           :current (current-version)
-          :jar (running-jar)}
+          :jar (running-jar (System/getenv "PCHAT_JAR"))}
          opts))
 
 (defn version-of-location
