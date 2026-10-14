@@ -8,14 +8,15 @@
   the running one, runs it once with `--version` (the file must answer
   the expected version, which catches a cut-off or wrong download),
   waits until no chat works and no video renders, puts the new jar in
-  place and ends the process with `exit-code`: the start script starts
-  the new jar on that code, and the page is back in seconds. Nothing
-  updates by itself.
+  place and ends the process with `exit-code`: whatever supervises the
+  process starts it again with the new jar (a sprite's runtime restarts
+  a service whose process exited by itself, within a second), and the
+  page is back in seconds. Nothing updates by itself.
 
-  The running jar is `PCHAT_JAR`, which the start script sets next to
-  the restart on `exit-code`; a pchat started any other way (from the
-  sources, `bb pchat.jar` by hand, an older start script without the
-  restart) shows no banner, since nothing would start it again.
+  The running jar is `PCHAT_JAR`, which the start script sets where a
+  supervisor will start the process again; a pchat started any other
+  way (from the sources, `bb pchat.jar` by hand, an older start script)
+  shows no banner, since nothing would start it again.
   `PCHAT_UPDATE_URL` points the lookup at another address (the download
   comes from the same base), for tests.
 

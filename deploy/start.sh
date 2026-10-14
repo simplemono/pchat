@@ -12,22 +12,13 @@ export PATH=/home/sprite/.local/bin:/.sprite/bin:/usr/local/bin:/usr/bin:/bin
 export PORT=8080
 export PCHAT_WORKSPACE=/home/sprite/pchat/workspace
 export BB=/home/sprite/.local/bin/bb
+# pchat swaps this file for a newer release when the person takes an
+# update (pchat.update) and then exits with code 75. The sprite's runtime
+# starts a service whose process exited by itself again (verified
+# 2026-10-14: restart_count grows, the first restart comes within a
+# second, repeated exits back off), so pchat comes back with the new jar.
+# The variable tells pchat where the jar is and that an exit is followed
+# by a restart; without it pchat offers no update.
 export PCHAT_JAR=/home/sprite/pchat/pchat.jar
 cd /home/sprite/pchat
-# pchat ends with exit code 75 once it has put a newer jar in place (the
-# person took an update, see pchat.update): then it is started again,
-# with the new jar, after a second. Any other exit ends the service.
-# bb runs as a child of this shell, so a stop or restart of the service
-# (a TERM to this shell) is passed on to bb, and the shell waits for
-# bb's own exit: no orphan keeps the port.
-pid=
-trap 'kill -TERM "$pid" 2>/dev/null' TERM INT
-while true; do
-  "$BB" "$PCHAT_JAR" &
-  pid=$!
-  wait "$pid"; code=$?
-  # wait returns early (>128) when the trap fires; collect the real exit
-  kill -0 "$pid" 2>/dev/null && { wait "$pid"; code=$?; }
-  [ "$code" = 75 ] || exit "$code"
-  sleep 1
-done
+exec "$BB" "$PCHAT_JAR"
