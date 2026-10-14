@@ -87,7 +87,7 @@
            (println (str "target/pchat.jar, " (quot (fs/size "target/pchat.jar") 1024) " kB")))}
 
   deploy
-  {:doc "bb deploy <sprite>: the jar as the service `pchat` behind the sprite's URL. First time: installs babashka, pi, ffmpeg, Google Chrome, fonts and HyperFrames, pushes deploy/start.sh and the local .env plus a PCHAT_TOKEN (never over an .env on the sprite), warms the dependency cache of the artifact projects."
+  {:doc "bb deploy <sprite>: the jar as the service `pchat` behind the sprite's URL. First time: installs babashka, pi, ffmpeg, Google Chrome, fonts and HyperFrames, pushes deploy/start.sh and the local .env plus a PCHAT_TOKEN (never over an .env on the sprite), warms the dependency cache of the artifact projects. Every time: the last commit of the PCHAT_AGENTITOS checkout as the sprite's skills in ~/agentitos (npm ci where a skill's package-lock.json changed), named in the sprite's .env."
    :task (let [sprite (or (first *command-line-args*)
                           (do (println "Which sprite? bb deploy <name>")
                               (System/exit 1)))
@@ -112,6 +112,26 @@
 
               :else
               (println "No .env here or on the sprite: the agent starts without an API key. Put OPENROUTER_API_KEY=... into /home/sprite/pchat/.env on the sprite."))
+            ;; the skills: the last commit of the local agentitos checkout, unpacked to
+            ;; ~/agentitos (the sprite needs no access to GitHub); node_modules are kept
+            ;; while a skill's package-lock.json is unchanged, else npm ci. The sprite's
+            ;; .env names the folder (start.sh stays as Storrito writes it).
+            (if-let [agentitos (not-empty (or (get (env-file) "PCHAT_AGENTITOS") (System/getenv "PCHAT_AGENTITOS")))]
+              (let [rev (str/trim (:out (shell {:out :string :dir agentitos} "git" "rev-parse" "--short" "HEAD")))
+                    archive (str (fs/absolutize "target/agentitos.tar.gz"))]
+                (when (seq (str/trim (:out (shell {:out :string :dir agentitos} "git" "status" "--porcelain"))))
+                  (println "agentitos has uncommitted changes: the sprite gets the last commit," rev))
+                (fs/create-dirs "target")
+                (shell {:dir agentitos} "git" "archive" "--format=tar.gz" "-o" archive "HEAD")
+                (push archive "/home/sprite/agentitos.tar.gz")
+                (println (remote (str "export PATH=/home/sprite/.local/bin:$PATH; cd ~; rm -rf agentitos.new; mkdir agentitos.new; tar xzf agentitos.tar.gz -C agentitos.new; rm agentitos.tar.gz; "
+                                      "for d in agentitos.new/*/; do n=$(basename $d); [ -f $d/package-lock.json ] || continue; "
+                                      "if cmp -s $d/package-lock.json agentitos/$n/package-lock.json && [ -d agentitos/$n/node_modules ]; then mv agentitos/$n/node_modules $d/; "
+                                      "else (cd $d && npm ci --no-audit --no-fund >/dev/null 2>&1) || echo \"npm ci failed in $n\"; fi; done; "
+                                      "rm -rf agentitos; mv agentitos.new agentitos; "
+                                      "f=pchat/.env; touch $f; { grep -v '^PCHAT_AGENTITOS=' $f; echo PCHAT_AGENTITOS=/home/sprite/agentitos; } > $f.new; mv $f.new $f; chmod 600 $f; "
+                                      "echo \"skills " rev ": $(ls -d agentitos/*/ | xargs -n1 basename | tr '\\n' ' ')\""))))
+              (println "No PCHAT_AGENTITOS here: the sprite gets no skills, every chat is free."))
             (push "target/pchat.jar" "/home/sprite/pchat/pchat.jar")
             (if (str/includes? (remote "sprite-env services list") "\"name\":\"pchat\"")
               (do (remote "sprite-env services restart pchat")
