@@ -30,6 +30,7 @@
             [pchat.pi :as pi]
             [pchat.projects :as projects]
             [pchat.render :as render]
+            [pchat.repl :as repl]
             [pchat.session :as session]
             [pchat.setup :as setup]
             [pchat.update :as update]
@@ -83,6 +84,16 @@
   "The clips the person attaches, where the agent finds them:
   `uploads/<name>` in its working directory."
   (io/file workspace "uploads"))
+
+(def repl
+  "The chats at the REPL, an experiment: see `pchat.repl`. A change of a
+  chat's state touches the chat in the db, which pushes a frame."
+  (repl/handle {:db db
+                :dir (io/file workspace ".pchat" "repl")
+                :looks-dir looks-dir
+                :model (str provider "/" model)
+                :on-change (fn [id]
+                             (swap! db assoc-in [:chats id :updated] (System/currentTimeMillis)))}))
 
 (def projects
   (projects/handle {:db db
@@ -264,16 +275,43 @@
       (let [id (str (random-uuid))]
         (swap! db #(-> % (assoc-in [:chats id] (new-chat id)) (assoc :current id)))))))
 
+(defn- repl?
+  [id]
+  (= :repl (get-in @db [:chats id :mode])))
+
+(defn- load-repl-chats!
+  "The chats at the REPL, from their directories (they have no session
+  file): named as the person named them, dated by their log."
+  []
+  (let [names (read-names)]
+    (swap! db update :chats
+           (fn [chats]
+             (into chats
+                   (for [id (repl/chat-ids repl)
+                         :when (not (get chats id))
+                         :let [file (repl/log-file repl id)
+                               at (if (.isFile file) (.lastModified file) (now))]]
+                     [id (merge chat/empty-chat
+                                {:id id
+                                 :mode :repl
+                                 :created at
+                                 :updated at
+                                 :loaded? true}
+                                (when (get names id) {:name (get names id)}))]))))))
+
 (defn- open!
   "Makes the chat current, its history read from the session file the
-  first time; the name the person gave it stays."
+  first time; the name the person gave it stays. A chat at the REPL
+  takes the `user` namespace (`pchat.repl/activate!`)."
   [id]
   (swap! db (fn [db]
               (let [{:keys [loaded? file name]} (get-in db [:chats id])]
                 (cond-> (assoc db :current id)
                   (and (not loaded?) file)
                   (update-in [:chats id] merge (session/load-chat (io/file file) intern-message)
-                             (when (get (read-names) id) {:name name})))))))
+                             (when (get (read-names) id) {:name name}))))))
+  (when (repl? id)
+    (repl/activate! repl id)))
 
 (defn- on-event
   [id event]
@@ -453,6 +491,11 @@
       (and (str/blank? text) (empty? images) (empty? clips))
       (command/rejected w (say w [:i18n :command/nothing-to-send]))
 
+      ;; A chat at the REPL: its own agent, no pi (`pchat.repl`).
+      (repl? (:current @db))
+      (do (repl/send! repl (:current @db) message (vec (remove uploads/kind names)))
+          (command/accepted w))
+
       ;; pi is still being installed on a fresh machine: the message
       ;; waits in the chat with the reason, see `pchat.setup`.
       (not (setup/ready? (setup/refresh! setup)))
@@ -467,8 +510,10 @@
 
 (defn- abort-command
   [w]
-  (when-let [p (get @pis (:current @db))]
-    (pi/abort! p))
+  (if (repl? (:current @db))
+    (repl/stop! repl (:current @db))
+    (when-let [p (get @pis (:current @db))]
+      (pi/abort! p)))
   (command/accepted w))
 
 (defn- new!
@@ -482,6 +527,14 @@
   [w]
   (new!)
   (command/accepted w))
+
+(defn- new-repl-command
+  "A fresh chat at the REPL (`pchat.repl`), the current one."
+  [w]
+  (let [id (new!)]
+    (swap! db assoc-in [:chats id :mode] :repl)
+    (repl/ensure! repl id)
+    (command/accepted w)))
 
 (defn- known-task
   "The task a name stands for: the name of a skill there is, :free for
@@ -581,6 +634,8 @@
   (write-tasks! (dissoc (read-tasks) id))
   (hooks/forget! hooks id)
   (artifacts/forget-chat! artifacts id)
+  (when (repl? id)
+    (repl/delete! repl id))
   (swap! db (fn [db]
               (let [chats (dissoc (:chats db) id)
                     current (if (= id (:current db))
@@ -775,7 +830,7 @@
 (defn page-view
   "The page in the language of the connection."
   [w]
-  (let [value @db
+  (let [value (repl/enrich repl @db)
         locale (i18n/locale (:ring/request w))
         base-url (share/base-url (:ring/request w))]
     (-> (view/page value {:key-missing? key-missing?
@@ -836,6 +891,8 @@
     :command/fn #'abort-command}
    {:command/kind :chat/new
     :command/fn #'new-command}
+   {:command/kind :chat/new-repl
+    :command/fn #'new-repl-command}
    {:command/kind :chat/task
     :command/fn #'task-command}
    {:command/kind :chat/open
@@ -888,6 +945,7 @@
                             (setup/register setup)
                             (projects/register projects)
                             (artifacts/register artifacts)
+                            (repl/register repl)
                             (looks/register {:db db
                                              :looks-dir looks-dir})
                             (uploads/register {:dir uploads-dir
@@ -942,6 +1000,7 @@
   (swap! db assoc :skills (skills/load-all (skills/checkout)))
   (share/load! shares)
   (load-chats!)
+  (load-repl-chats!)
   (hooks/load! hooks)
   (mcp/load! connections)
   (open! (:current @db))

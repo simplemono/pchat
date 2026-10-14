@@ -8,6 +8,7 @@
             [pchat.artifacts :as artifacts]
             [pchat.chat :as chat]
             [pchat.genui :as genui]
+            [pchat.repl :as repl]
             [pchat.skills :as skills]
             [rchat.feed :as feed]))
 
@@ -32,6 +33,7 @@
       (= "write" name) [:i18n :tool/write]
       (= "edit" name) [:i18n :tool/edit]
       (= "tool_search" name) [:i18n :tool/search]
+      (= "eval" name) [:i18n :tool/eval]
       connection [:i18n :tool/connection {:tool tool :connection connection}]
       :else [:i18n :tool/other {:name name}])))
 
@@ -518,6 +520,12 @@
                   :role "button"
                   :on {:click [[:data/command {:command/kind :chat/new}]]}}
       [:i18n :chat/new]]
+     ;; The experiment: a chat whose design is made at the REPL
+     ;; (pchat.repl), shown live beside the chat.
+     [:label.new.repl {:for "nav"
+                       :role "button"
+                       :on {:click [[:data/command {:command/kind :chat/new-repl}]]}}
+      [:i18n :chat/new-repl]]
      ;; The list is keyed by its order: a chat that moves to the top
      ;; makes a new list. Replicant 2026.07.1 records the wrong vdom for
      ;; a row it moves to the front, and the row's next change (the
@@ -542,6 +550,48 @@
                         :on {:click [[:data/command {:command/kind :settings/open}]]}}
        [:i18n :settings/button]]
       (languages locale)]])))
+
+(defn- timestamp
+  [seconds]
+  (let [seconds (double (or seconds 0))]
+    (format "%d:%04.1f" (long (quot seconds 60)) (rem seconds 60.0))))
+
+(defn- motion-pane
+  "The server-rendered player of a motion design: the frame at `t`,
+  play, a scrubber."
+  [{:keys [view-fn design duration] t :motion/t playing? :motion/playing?}]
+  (let [duration (double duration)]
+    [:div.motion
+     [:div.motion-frame (repl/render view-fn design t)]
+     [:div.fnmotion-controls
+      [:button {:on {:click [[:data/command {:command/kind :repl/toggle}]]}}
+       (if playing? [:i18n :repl/pause] [:i18n :repl/play])]
+      [:input {:type "range"
+               :min 0
+               :max 1000
+               :value (long (* 1000 (/ (or t 0.0) duration)))
+               :on {:input [[:data/command {:command/kind :repl/seek
+                                            :command/data {:value :event/target.value}}]]}}]
+      [:span.fnmotion-time (str (timestamp t) " / " (timestamp duration))]]]))
+
+(defn repl-pane
+  "The creation of a chat at the REPL (`pchat.repl/snapshot`): the
+  design rendered by the `design-view` the model defined, a motion
+  design with its player, the code of the creation underneath."
+  [{:keys [view-fn design duration source] :as pane}]
+  [:div.canvas-pane
+   [:div.canvas-bar
+    [:span.label [:i18n :repl/label]]
+    (when (and view-fn duration)
+      [:span.hint (str duration " s")])]
+   (cond
+     (and view-fn duration) (motion-pane pane)
+     view-fn [:div.design (repl/render view-fn design)]
+     :else [:div.canvas-placeholder [:i18n :repl/placeholder]])
+   (when source
+     [:details.work
+      [:summary [:i18n :repl/code]]
+      [:pre source]])])
 
 (defn views
   "On a phone the chat and the card take turns: two radios, the labels
@@ -582,11 +632,12 @@
   "`opts`: `:key-missing?`, `:locale` (the language of the page, see
   `pchat.i18n`) and `:project` (see `pchat.artifacts/view`). A new chat
   shows the tasks to pick from first, when there are skills."
-  [{:keys [chats current deleting hook-open settings-open setup update] files :artifacts/list :as db} {:keys [locale] :as opts}]
+  [{:keys [chats current deleting hook-open settings-open setup update] files :artifacts/list pane :repl/pane :as db} {:keys [locale] :as opts}]
   (let [chat (get chats current)
+        repl? (= :repl (:mode chat))
         skill (skills/by-name (:skills db) (:task chat))
-        picking? (and (seq (:skills db)) (nil? (:task chat)) (empty? (:items chat)))
-        card? (seq files)]
+        picking? (and (not repl?) (seq (:skills db)) (nil? (:task chat)) (empty? (:items chat)))
+        card? (or repl? (seq files))]
     [:div.pchat {:lang (some-> locale name)}
      ;; The drawer state on a phone, toggled by labels, never rendered
      ;; with :checked so that the person's choice survives a frame.
@@ -622,4 +673,7 @@
              (feed chat (some-> skill (intro locale)))
              (composer chat (assoc opts :placeholder (some-> skill (skills/text :placeholder locale))))))]
          (when card?
-           [:section.card (artifacts/view db (assoc (select-keys opts [:project :share]) :chat-name chat-name))])]])]))
+           [:section.card
+            (if repl?
+              (repl-pane pane)
+              (artifacts/view db (assoc (select-keys opts [:project :share]) :chat-name chat-name)))])]])]))

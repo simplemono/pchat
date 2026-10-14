@@ -7,6 +7,7 @@
  :page/view-made "What we made"
 
  :chat/new "New chat"
+ :chat/new-repl "Design at the REPL (experiment)"
  :chat/untitled "New chat"
  :chat/working "Working"
  :chat/ready "Ready"
@@ -35,7 +36,15 @@
  :tool/edit "Changed a file"
  :tool/other [:fn/str "Used {{:name}}"]
  :tool/search "Looked for a tool"
+ :tool/eval "Evaluated"
  :tool/connection [:fn/str "Used {{:tool}} of {{:connection}}"]
+ :repl/label "Your creation"
+ :repl/placeholder "Your creation will appear here, with controls to play with it."
+ :repl/code "The code of your creation"
+ :repl/play "Play"
+ :repl/pause "Pause"
+ :repl/view-failed [:fn/str "The view failed: {{:error}}"]
+ :repl/frame-failed [:fn/str "The frame failed: {{:error}}"]
  :tool/running " …"
  :tool/failed " · did not work"
 
