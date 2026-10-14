@@ -202,6 +202,43 @@ Parakeet and sherpa-onnx, see its README).
 The skill's world is drawn on the CPU, so a render needs no graphics card
 (a 30-second short takes a few minutes on 8 cores).
 
+#### Skill actions: pages that act without the agent
+
+A skill can let its artifact pages run commands itself, for work that
+needs no judgement (applying settings, rebuilding, checking): an
+`actions.json` beside its `SKILL.md`,
+
+```json
+{"apply": {"run": ["node", "{skill}/tools/apply.mjs"], "label": "Apply the settings", "timeout": 300}}
+```
+
+A page runs one with the command `:artifacts/action` on `POST /command`,
+`{:id <chat> :path "short-1" :action "apply" :input {...}}` (`:skill`
+names another skill than the chat's task). pchat (`pchat.actions`) runs
+the command in the chat's folder, `{skill}` replaced by the skill's
+folder, with `{"artifact": "short-1", "input": {...}}` as JSON on its
+standard input; a line `progress <text>` is its progress, the last JSON
+object it prints its result (`{"ok": true, "note": "..."}`, or `"ok":
+false` with an `"error"`). `GET /chat/<id>/actions/<path>` answers the
+state of the artifact's last action for the page to poll.
+
+- **Fixed commands, untrusted input:** only what the operator's skill
+  declares runs, never a shell; the input reaches it as data and the
+  skill checks it. A page could already make the agent do anything with
+  `chat/send`, so an action is strictly less. Share links serve files
+  without the token, so a shared page cannot run actions.
+- **One at a time:** not while the chat's agent works or the artifact
+  renders, one action per artifact, ended after its `timeout` (600 s by
+  default). pchat waits for running actions before an update restarts it.
+- **The page stays in front:** what an action changes does not take the
+  screen, the page that asked for it stays (`pchat.artifacts/acted`).
+- **The agent stays in the picture:** the chat gets a note when an
+  action ends, and the agent a line above the person's next message,
+  `(Action on the page: apply on short-1, done: …)`, which the chat
+  does not show. The agent runs actions itself with
+  `bin/action <skill> <action> <artifact> '<json>'` (from
+  `.pchat/actions.edn`, written at start).
+
 ### Music and the agent's own UI
 
 `bin/music <name> "<what it should sound like>" [file]` makes a

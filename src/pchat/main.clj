@@ -20,9 +20,11 @@
   tab's: its URL, `/chat/<id>`, until a click in the sidebar names
   another (`:tabs`)."
   (:require [babashka.nrepl.server :as nrepl-server]
+            [cheshire.core :as json]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [org.httpkit.server :as server]
+            [pchat.actions :as actions]
             [pchat.artifacts :as artifacts]
             [pchat.chat :as chat]
             [pchat.chats :as chats]
@@ -122,11 +124,22 @@
                   ;; not notice: the file stopped changing before.
                   :on-finish (fn [id _name] (artifacts/refollow! artifacts id))}))
 
+(declare chat-env action-finished!)
+
+(def action-runs
+  "The skills' actions the pages run, see `pchat.actions`."
+  (actions/handle {:db db
+                   :chats-dir chats-dir
+                   :env (fn [id] (chat-env id))
+                   :on-finish (fn [id path entry] (action-finished! id path entry))}))
+
 (defn- idle?
-  "No chat works and no video renders: the moment the process may end."
+  "No chat works, no video renders, no action runs: the moment the
+  process may end."
   []
   (and (every? #(= :idle (:status %)) (vals (:chats @db)))
-       (not (render/any-running? renders))))
+       (not (render/any-running? renders))
+       (not (actions/any-running? action-runs))))
 
 (def updater
   (update/handle {:db db
@@ -182,7 +195,8 @@
    "bin/voice"
    "bin/ask"
    "bin/mcp"
-   "bin/migrate-chats"])
+   "bin/migrate-chats"
+   "bin/action"])
 
 (def lib-files
   "Namespaces of pchat the scripts load from .pchat/lib: `bin/mcp` edits
@@ -214,6 +228,23 @@
       (spit target (slurp (io/resource (str "pchat/" path))))))
   (doseq [path retired-files]
     (io/delete-file (io/file workspace path) true)))
+
+(def actions-file
+  "The skills' actions for `bin/action`, the agent's way to run them:
+  `{skill {action {:run [...] :timeout s}}}`, `{skill}` replaced."
+  (io/file workspace ".pchat" "actions.edn"))
+
+(defn- write-actions!
+  [skills]
+  (io/make-parents actions-file)
+  (spit actions-file
+        (pr-str (into (sorted-map)
+                      (for [{:keys [name dir actions]} skills
+                            :when (seq actions)]
+                        [name (into (sorted-map)
+                                    (for [[action definition] actions]
+                                      [action {:run (actions/command-line definition dir)
+                                               :timeout (:timeout definition)}]))])))))
 
 (defn- sync-projects!
   "Starts, watches and reloads the artifact projects, once a second."
@@ -463,11 +494,33 @@
   (i18n/translate text (i18n/locale (:ring/request w))))
 
 (defn- send!
-  "The text and the images to the chat's agent."
+  "The text and the images to the chat's agent, below a line for each
+  action a page ran since its last message (`pchat.actions/note-line`)."
   [id text images]
   (let [p (ensure-pi! id)
-        streaming? (= :working (get-in @db [:chats id :status]))]
-    (pi/prompt! p text streaming? images)))
+        streaming? (= :working (get-in @db [:chats id :status]))
+        [old] (swap-vals! db update-in [:chats id] dissoc :action-notes)
+        notes (get-in old [:chats id :action-notes])]
+    (pi/prompt! p (str/join "\n" (concat notes [text])) streaming? images)))
+
+(defn- action-finished!
+  "An action ended: a note in its chat for the person, and a line for
+  the agent with the next message."
+  [id path {:keys [label action error result] :as entry}]
+  (when (get-in @db [:chats id])
+    (swap! db update-in [:chats id]
+           (fn [c]
+             (-> c
+                 (update :items conj {:kind :note
+                                      :text (if error
+                                              [:i18n :actions/failed {:label (or label action) :error error}]
+                                              [:i18n :actions/done {:label (or label action)
+                                                                    :note (or (:note result) "")}])})
+                 (update :action-notes (fnil conj []) (actions/note-line path entry))
+                 (assoc :updated (now)))))
+    ;; The new files on the list now; the page that asked stays on
+    ;; screen (`pchat.artifacts/acted`).
+    (artifacts/refresh! artifacts id)))
 
 (defn- keep!
   "The message of a chat whose agent is not there yet: kept in the
@@ -655,6 +708,7 @@
     (swap! pis dissoc id))
   (projects/stop-chat! projects id)
   (render/stop-chat! renders id)
+  (actions/stop-chat! action-runs id)
   (chats/delete! chats-dir id)
   (swap! db (fn [db]
               (-> db
@@ -698,6 +752,45 @@
       (do (render/start! renders id path)
           (command/accepted w))
       (command/rejected w (say w [:i18n :command/no-such-artifact])))))
+
+(defn- action-command
+  "A page runs one of its skill's actions on an artifact of the chat:
+  `{:id chat :path \"short-1\" :action \"apply\" :input {...}}`, the
+  skill the chat's task or `:skill` by name. Not while the chat's agent
+  works or the artifact renders, and one at a time per artifact."
+  [w]
+  (let [{:keys [id path action input skill]} (command/command-data w)
+        chat (get-in @db [:chats id])
+        skill (skills/by-name (:skills @db) (or (not-empty (str skill)) (:task chat)))
+        definition (get-in skill [:actions (str action)])
+        path (str path)]
+    (cond
+      (not chat)
+      (command/rejected w (say w [:i18n :command/no-such-chat]))
+
+      ;; On disk, not on the list: the list follows the chats on screen.
+      (not (actions/artifact? (chats/artifacts-dir chats-dir id) path))
+      (command/rejected w (say w [:i18n :command/no-such-artifact]))
+
+      (nil? definition)
+      (command/rejected w (say w [:i18n :actions/unknown {:action (str action)}]))
+
+      (= :working (:status chat))
+      (command/rejected w (say w [:i18n :actions/agent-working]))
+
+      (or (render/running? renders id path) (actions/running? action-runs id path))
+      (command/rejected w (say w [:i18n :actions/busy]))
+
+      (< actions/max-input-bytes (count (json/generate-string input)))
+      (command/rejected w (say w [:i18n :actions/too-large]))
+
+      :else
+      (do (actions/start! action-runs id {:skill-dir (:dir skill)
+                                          :action-name (str action)
+                                          :action definition
+                                          :path path
+                                          :input input})
+          (command/accepted w)))))
 
 (defn- render-stop-command
   [w]
@@ -961,7 +1054,8 @@
 
 (defn- chat-get
   "GET /chat/<id>: the page; /chat/<id>/artifacts/<path>: a running
-  project's page, else the file; /chat/<id>/uploads/<name>: the file."
+  project's page, else the file; /chat/<id>/uploads/<name>: the file;
+  /chat/<id>/actions/<path>: the state of the artifact's last action."
   [w]
   (let [[id rest] (split-chat-path w)]
     (cond
@@ -983,6 +1077,9 @@
 
       (str/starts-with? rest "uploads/")
       (uploads/file-handler (chats/uploads-dir chats-dir id) (under w rest "uploads/"))
+
+      (str/starts-with? rest "actions/")
+      (actions/state-handler action-runs id (under w rest "actions/"))
 
       :else
       (not-found w))))
@@ -1060,6 +1157,8 @@
     :command/fn #'render-command}
    {:command/kind :artifacts/render-stop
     :command/fn #'render-stop-command}
+   {:command/kind :artifacts/action
+    :command/fn #'action-command}
    {:command/kind :hook/toggle
     :command/fn #'hook-toggle-command}
    {:command/kind :hook/create
@@ -1139,6 +1238,7 @@
   (.mkdirs (io/file workspace ".pi"))
   (install-workspace!)
   (swap! db assoc :skills (skills/load-all (skills/checkout)))
+  (write-actions! (:skills @db))
   (load-chats!)
   (mcp/load! connections)
   (migrate/check! migration)
@@ -1150,6 +1250,7 @@
   (update/watch! updater)
   (.addShutdownHook (Runtime/getRuntime) (Thread. #(do (projects/stop-all! projects)
                                                        (render/stop-all! renders)
+                                                       (actions/stop-all! action-runs)
                                                        (hooks/stop-all! hooks))))
   (sse/watch! db)
   (let [port (parse-long (or (System/getenv "PORT") "8080"))

@@ -10,6 +10,7 @@
        :cost   USD so far
        :log    stderr lines of pi, for debugging}"
   (:require [clojure.string :as str]
+            [pchat.actions :as actions]
             [pchat.uploads :as uploads]))
 
 (def empty-chat
@@ -39,11 +40,12 @@
 
 (defn user-item
   "The item of a user message: its text without the lines that name
-  attached clips, its images, and the clips as `:media`."
+  attached clips or tell the agent what a page ran, its images, and the
+  clips as `:media`."
   [content]
   (let [text (text-of content)]
     {:kind :user
-     :text (uploads/without-lines text)
+     :text (actions/without-notes (uploads/without-lines text))
      :images (images-of content)
      :media (uploads/attachments text)}))
 

@@ -155,6 +155,13 @@
  :command/no-such-task "Diese Aufgabe gibt es nicht."
  :command/task-fixed "Dieser Chat hat schon begonnen, seine Aufgabe bleibt. Starte für eine andere einen neuen Chat."
 
+ :actions/done [:fn/str "{{:label}}: erledigt. {{:note}}"]
+ :actions/failed [:fn/str "{{:label}} hat nicht geklappt: {{:error}}"]
+ :actions/unknown [:fn/str "Diese Seite hat keine Aktion „{{:action}}“."]
+ :actions/agent-working "Der Agent arbeitet gerade; versuch es, wenn er fertig ist."
+ :actions/busy "Für dieses Artefakt läuft schon etwas; versuch es gleich noch einmal."
+ :actions/too-large "Das ist zu viel zum Senden."
+
  :upload/attached-video [:fn/str "(Angehängtes Video: {{:path}})"]
  :upload/attached-audio [:fn/str "(Angehängtes Audio: {{:path}})"]
  :upload/attached-image [:fn/str "(Angehängtes Bild: {{:path}})"]}

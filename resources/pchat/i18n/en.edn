@@ -157,6 +157,13 @@
  :command/no-such-task "No such task."
  :command/task-fixed "This chat has started; its task stays. Start a new chat for another one."
 
+ :actions/done [:fn/str "{{:label}}: done. {{:note}}"]
+ :actions/failed [:fn/str "{{:label}} did not work: {{:error}}"]
+ :actions/unknown [:fn/str "This page has no action \"{{:action}}\"."]
+ :actions/agent-working "The agent is working; try again once it is done."
+ :actions/busy "Something runs for this artifact already; try again in a moment."
+ :actions/too-large "That is too much to send."
+
  :upload/attached-video [:fn/str "(Attached video: {{:path}})"]
  :upload/attached-audio [:fn/str "(Attached audio: {{:path}})"]
  :upload/attached-image [:fn/str "(Attached picture: {{:path}})"]}

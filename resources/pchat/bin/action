@@ -1,0 +1,32 @@
+#!/usr/bin/env bb
+;; bin/action <skill> <action> <artifact> ['<input as JSON>']   runs one
+;; of a skill's actions (its actions.json) the way a page beside the
+;; chat runs it: the command of .pchat/actions.edn in the workspace, the
+;; request {"artifact": ..., "input": ...} as JSON on its standard input,
+;; its output here.
+(require '[babashka.process :as process]
+         '[cheshire.core :as json]
+         '[clojure.edn :as edn]
+         '[clojure.java.io :as io])
+
+(let [[skill action artifact input] *command-line-args*
+      file (io/file ".pchat" "actions.edn")
+      actions (when (.isFile file) (edn/read-string (slurp file)))
+      {:keys [run]} (get-in actions [skill action])]
+  (cond
+    (not (and skill action artifact))
+    (do (println "bin/action <skill> <action> <artifact> ['<input as JSON>']")
+        (doseq [[skill-name defined] actions]
+          (println (str "  " skill-name ": " (clojure.string/join ", " (keys defined)))))
+        (System/exit 1))
+
+    (nil? run)
+    (do (println (str "No action " action " in the skill " skill ". There are: " (pr-str (update-vals actions keys))))
+        (System/exit 1))
+
+    :else
+    (let [input (if input (json/parse-string input) {})
+          {:keys [exit]} @(process/process run {:in (json/generate-string {:artifact artifact :input input})
+                                                :out :inherit
+                                                :err :inherit})]
+      (System/exit exit))))

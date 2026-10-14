@@ -173,3 +173,27 @@
       (artifacts/pick! handle id "notes.html")
       (artifacts/refollow! handle id)
       (is (= "notes.html" (:artifacts/current (chat)))))))
+
+(deftest action-keeps-the-page-test
+  (let [chats (temp-dir)
+        dir (io/file chats id "artifacts")
+        db (atom {:chats {id {:id id}}})
+        handle (artifacts/handle {:db db :chats-dir chats})
+        chat (fn [] (get-in @db [:chats id]))
+        now (System/currentTimeMillis)]
+    (touch! dir "short/bb.edn" (- now 60000))
+    (touch! dir "short-setup.html" (- now 50000))
+    (artifacts/refresh! handle id)
+    (is (= "short-setup.html" (:artifacts/current (chat))) "the page, the newest")
+    (testing "what the page's action changes does not take the screen, while it runs and after"
+      (swap! db assoc-in [:chats id :actions "short"] {:action "apply" :started now})
+      (touch! dir "short/composition/index.html" (+ now 1000))
+      (artifacts/refresh! handle id)
+      (is (= "short-setup.html" (:artifacts/current (chat))))
+      (swap! db update-in [:chats id :actions "short"] assoc :exit 0 :ended (+ now 2000))
+      (artifacts/refresh! handle id)
+      (is (= "short-setup.html" (:artifacts/current (chat)))))
+    (testing "a later change, the agent's, is news again"
+      (touch! dir "short/composition/index.html" (+ now 9000))
+      (artifacts/refresh! handle id)
+      (is (= "short" (:artifacts/current (chat)))))))

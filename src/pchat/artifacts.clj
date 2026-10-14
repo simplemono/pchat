@@ -19,7 +19,9 @@
 
   It reads `:renders` of the chat (`pchat.render`): a video a render
   still writes is shown as is, with its progress, and does not take the
-  screen. The files are served under `/chat/<id>/artifacts/`."
+  screen. And `:actions` (`pchat.actions`): what a page's action
+  changes is the page's doing, no news; the page stays on screen. The
+  files are served under `/chat/<id>/artifacts/`."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [pchat.chats :as chats]
@@ -141,14 +143,25 @@
       (when (and (:started render) (nil? (:exit render)))
         render))))
 
+(defn acted
+  "The action of a page that made the artifact's last change (`pchat.actions`):
+  one that runs on it, or one that ended after the artifact changed; nil
+  when the change is the agent's. The page asked for it and is on screen."
+  [{:keys [actions]} {:keys [path mtime]}]
+  (when-let [action (get actions path)]
+    (when (and (:started action)
+               (or (nil? (:ended action)) (<= (or mtime 0) (:ended action))))
+      action)))
+
 (defn follow
   "The artifact on screen after the folder changed: the newest finished
   file when it is newer than the user's pick, what they picked while it
   exists, the newest otherwise. A video a render still writes changes
   with every frame and does not take the screen by itself; it is news
-  once the render is done (`refollow!`)."
+  once the render is done (`refollow!`). What a page's action changed
+  takes it never: the page that asked stays."
   [{:keys [artifacts/current artifacts/picked-at] :as chat} {files :artifacts/list}]
-  (let [finished (remove (partial writing chat) files)
+  (let [finished (remove #(or (writing chat %) (acted chat %)) files)
         newest (or (first finished) (first files))
         current (some #(when (= current (:path %)) %) files)]
     (cond

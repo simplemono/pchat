@@ -9,7 +9,8 @@
   variant for German."
   (:require [babashka.fs :as fs]
             [cheshire.core :as json]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [pchat.actions :as actions]))
 
 (defn- scalar
   "A YAML scalar as a string: double quotes as JSON, single quotes with
@@ -70,7 +71,8 @@
 
 (defn load-all
   "The skills of the folders in `dir` that have a SKILL.md with a name,
-  by name: `[{:name :description :dir :file :metadata :body}]`."
+  by name: `[{:name :description :dir :file :metadata :body :actions}]`,
+  `:actions` from the folder's actions.json (see `pchat.actions`)."
   [dir]
   (if-not dir
     []
@@ -82,7 +84,8 @@
                    (when (:name skill)
                      (assoc skill
                             :dir (str folder)
-                            :file (str file))))))
+                            :file (str file)
+                            :actions (actions/read-actions (str folder)))))))
          (sort-by :name)
          (vec))))
 
