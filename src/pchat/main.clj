@@ -787,9 +787,12 @@
        " var p = document.querySelector('.pchat[lang]');"
        " if (p && document.documentElement.lang !== p.lang) document.documentElement.lang = p.lang;"
        "}).observe(document.documentElement, {subtree: true, childList: true, attributes: true, attributeFilter: ['lang']});</script>"
-       "<link rel=\"stylesheet\" href=\"/rchat.css\">"
-       "<link rel=\"stylesheet\" href=\"/pchat.css\">"
-       "<script defer src=\"/js/main.js\"></script>"))
+       ;; The version in the links, so that a browser fetches the
+       ;; stylesheets and the script of a new release instead of
+       ;; keeping the ones it cached.
+       "<link rel=\"stylesheet\" href=\"/rchat.css?v=" (update/current-version) "\">"
+       "<link rel=\"stylesheet\" href=\"/pchat.css?v=" (update/current-version) "\">"
+       "<script defer src=\"/js/main.js?v=" (update/current-version) "\"></script>"))
 
 (def register
   [(http/resources "/rchat.css" "pchat/chat.css")
@@ -919,10 +922,14 @@
     ;; of a few dozen MB in one request.
     (server/run-server (handler token) {:port port
                                         :max-body (* 64 1024 1024)})
+    ;; Under a supervisor (`PCHAT_JAR` set, the output goes to a log
+    ;; that is kept) the line names the address without the token;
+    ;; a hand start prints the link to open.
     (println (str "pchat on "
-                  (if token
-                    (auth/link (str "http://localhost:" port) token)
-                    (str "http://localhost:" port))
+                  (cond
+                    (and token (System/getenv "PCHAT_JAR")) (str "http://localhost:" port " (the token is in the environment)")
+                    token (auth/link (str "http://localhost:" port) token)
+                    :else (str "http://localhost:" port))
                   ", " (count (:chats @db)) " chats, the model is " provider "/" model
                   ", the workspace " (.getCanonicalPath workspace)
                   ", " (tools/report)
