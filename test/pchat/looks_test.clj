@@ -17,14 +17,15 @@
 
 (deftest intern-and-blocks-test
   (let [dir (temp-dir)
+        prefix "/chat/c/uploads"
         content [{:type "text" :text "Like this"}
                  {:type "image" :data png :mimeType "image/png"}]
-        interned (looks/intern dir content)
+        interned (looks/intern dir prefix content)
         {:keys [name url]} (second interned)]
-    (testing "the bytes become a content-addressed file, the block its name and URL"
+    (testing "the bytes become a content-addressed file in the chat's folder, the block its name and URL"
       (is (= {:type "text" :text "Like this"} (first interned)))
       (is (re-matches #"[0-9a-f]{32}\.png" name))
-      (is (= (str "/looks/" name) url))
+      (is (= (str prefix "/" name) url))
       (is (.isFile (io/file dir name))))
     (testing "the file reads back as the block pi takes"
       (is (= [{:type "image" :data png :mimeType "image/png"}]
@@ -34,10 +35,10 @@
     (testing "the chat shows the URL under the user's message"
       (let [chat (chat/event chat/empty-chat
                              {:type "message_start"
-                              :message (looks/intern-message dir {:role "user" :content content})})]
+                              :message (looks/intern-message dir prefix {:role "user" :content content})})]
         (is (= [url] (:images (first (:items chat)))))
         (is (= "Like this" (:text (first (:items chat)))))))
     (testing "the history does the same"
       (let [entries [{:type "message" :message {:role "user" :content content}}]]
-        (is (= [url] (:images (first (session/items entries #(looks/intern-message dir %))))))
+        (is (= [url] (:images (first (session/items entries #(looks/intern-message dir prefix %))))))
         (is (= [] (:images (first (session/items entries)))))))))

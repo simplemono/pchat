@@ -29,7 +29,9 @@
     (is (= ["a" "b"] (projects/names dir)))))
 
 (deftest handler-passes-unknown-test
-  (let [handle (projects/handle {:db (atom {}) :dir "/tmp/none"})
+  (let [handle (projects/handle {:db (atom {}) :chats-dir "/tmp/none"})
         w {:ring/route-params {:* "hello.html"} :ring/request {}}]
-    (testing "a path that is no running project is left to the next route"
-      (is (= w (projects/handler handle w))))))
+    (testing "a path that is no running project is left to the caller"
+      (is (= w (projects/handler handle "c" w))))
+    (testing "no chats, no projects, nothing to sync"
+      (is (nil? (projects/sync! handle))))))

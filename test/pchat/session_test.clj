@@ -47,10 +47,11 @@
 (deftest sidebar-test
   (let [a (merge (session/load-chat fixture) {:updated 2})
         b {:id "b" :items [] :status :working :updated 3 :cost 0.0}
-        sidebar (i18n/translate (view/sidebar {:chats {(:id a) a "b" b} :current "b"}) :en)
+        sidebar (i18n/translate (view/sidebar {:chats {(:id a) a "b" b}} {:id "b"}) :en)
         lis (filter #(and (vector? %) (= :li (first %))) (tree-seq coll? seq sidebar))]
     (is (= ["b" (:id a)] (map #(get-in % [1 :replicant/key]) lis)))
     (is (= "current working" (get-in (first lis) [1 :class])))
+    (is (= "/chat/b" (get-in (first lis) [2 1 :href])) "a row is a link to the chat's page")
     (is (some #{"New chat"} (filter string? (tree-seq coll? seq sidebar)))))
   (testing "the running version stands next to the name once the updater noted it"
     (let [strings (fn [db] (filter string? (tree-seq coll? seq (view/sidebar db))))]

@@ -37,18 +37,19 @@
              (render/not-ready-message ["ffmpeg"] (render/video-tools-state markers)))))
     (testing "start! refuses without a process while the tools install, the reason as the render's error"
       (let [db (atom {})
-            handle (render/handle {:db db :workspace (temp-dir) :env {"PATH" (temp-dir)} :markers-dir markers})]
-        (is (= "card" (render/start! handle "card")))
-        (is (= 1 (get-in @db [:renders "card" :exit])))
+            handle (render/handle {:db db :chats-dir (temp-dir) :env {"PATH" (temp-dir)} :markers-dir markers})]
+        (is (= "card" (render/start! handle "c" "card")))
+        (is (= 1 (get-in @db [:chats "c" :renders "card" :exit])))
         (is (= "The video tools could not be installed: failed (exit 100): sudo apt-get install: E: Unable to locate package"
-               (get-in @db [:renders "card" :error])))
-        (is (not (render/running? handle "card")))))))
+               (get-in @db [:chats "c" :renders "card" :error])))
+        (is (not (render/running? handle "c" "card")))))))
 
 (deftest on-finish-test
   (let [tools (temp-dir)
-        workspace (temp-dir)
+        chats (temp-dir)
         bb (io/file tools "bb")
         finished (promise)]
+    (.mkdirs (io/file chats "c"))
     (doseq [name ["ffmpeg" "google-chrome" "hyperframes"]]
       (let [file (io/file tools name)]
         (spit file "#!/bin/sh\n")
@@ -57,13 +58,13 @@
     (.setExecutable bb true)
     (let [db (atom {})
           handle (render/handle {:db db
-                                 :workspace workspace
+                                 :chats-dir chats
                                  :bb (str bb)
                                  :env {"PATH" tools}
                                  :markers-dir (temp-dir)
-                                 :on-finish (fn [name] (deliver finished [name (get-in @db [:renders name])]))})]
-      (is (= "card" (render/start! handle "card")))
-      (let [[name render] (deref finished 10000 [:timeout nil])]
-        (is (= "card" name) "told once the render ended")
+                                 :on-finish (fn [id name] (deliver finished [id name (get-in @db [:chats id :renders name])]))})]
+      (is (= "card" (render/start! handle "c" "card")))
+      (let [[id name render] (deref finished 10000 [:timeout nil nil])]
+        (is (= ["c" "card"] [id name]) "told once the render ended, with the chat")
         (is (= 0 (:exit render)) "with its exit in the db already")
         (is (nil? (:progress render)))))))

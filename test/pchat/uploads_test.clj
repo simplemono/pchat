@@ -35,16 +35,16 @@
 (deftest whole-clip-test
   (let [dir (temp-dir)
         content (bytes-of 200000)
-        [status {:keys [name url kind size]}] (post {:dir dir} "video/mp4" content)]
+        [status {:keys [name url kind size]}] (post {:dir dir :url-prefix "/chat/c/uploads"} "video/mp4" content)]
     (testing "a clip in one request lands on disk under the hash of its bytes"
       (is (= 200 status))
       (is (re-matches #"[0-9a-f]{32}\.mp4" name))
-      (is (= (str "/uploads/" name) url))
+      (is (= (str "/chat/c/uploads/" name) url))
       (is (= :video kind))
       (is (= 200000 size))
       (is (= (seq content) (seq (java.nio.file.Files/readAllBytes (.toPath (io/file dir name)))))))
     (testing "the same bytes again are the same file, no part file stays"
-      (is (= name (:name (second (post {:dir dir} "video/mp4" content)))))
+      (is (= name (:name (second (post {:dir dir :url-prefix "/chat/c/uploads"} "video/mp4" content)))))
       (is (= [name] (visible-files dir)))
       (is (empty? (filter #(.endsWith (.getName %) ".part") (.listFiles (io/file dir))))))
     (testing "an audio type with parameters"
@@ -52,6 +52,22 @@
         (is (= 200 status))
         (is (= :audio (:kind answer)))
         (is (.endsWith (:name answer) ".mp3"))))))
+
+(def png
+  "A 1x1 PNG."
+  (.decode (java.util.Base64/getDecoder)
+           "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="))
+
+(deftest image-test
+  (let [dir (temp-dir)
+        [status {:keys [name url]}] (post {:dir dir :url-prefix "/chat/c/uploads"} "image/png" png)]
+    (testing "an image lands in the same folder, named by its content, served under the chat"
+      (is (= 200 status))
+      (is (re-matches #"[0-9a-f]{32}\.png" name))
+      (is (= (str "/chat/c/uploads/" name) url))
+      (is (= [name] (visible-files dir))))
+    (testing "an empty image"
+      (is (= [400 {:error :empty}] (post {:dir dir :url-prefix "/chat/c/uploads"} "image/png" (byte-array 0)))))))
 
 (deftest rejected-test
   (let [dir (temp-dir)]
@@ -93,9 +109,12 @@
     (testing "the lines that name clips"
       (is (= ["uploads/ab12cd.mp4" "uploads/ff00.wav"] (uploads/paths text)))
       (is (= "Make a short of this" (uploads/without-lines text)))
-      (is (= [{:kind :video :url "/uploads/ab12cd.mp4"}
-              {:kind :audio :url "/uploads/ff00.wav"}]
-             (uploads/attachments text))))
+      (is (= [{:kind :video :name "ab12cd.mp4"}
+              {:kind :audio :name "ff00.wav"}]
+             (uploads/attachments text)))
+      (is (= [{:kind :video :name "ab12cd.mp4"}]
+             (uploads/attachments "(Attached picture: uploads/aa.png)\n(Attached video: uploads/ab12cd.mp4)"))
+          "a picture is shown from the message's image, not as a clip"))
     (testing "the chat shows the text without them and the clips as media"
       (let [item (first (:items (chat/event chat/empty-chat
                                             {:type "message_start"

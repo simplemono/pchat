@@ -1,26 +1,40 @@
 (ns pchat.view
-  "The page as a function of the app value: the sidebar with the chats,
-  the header, the current chat (feed and composer). Classes follow rchat's
-  stylesheet, which pchat ships as its own, plus pchat.css for the sidebar.
-  The texts are m1p reference tuples, `[:i18n :chat/new]`, that
-  `pchat.i18n/translate` turns into the language of the person."
+  "The page as a function of the app value and the chat the connection
+  shows: the sidebar with the chats, the header, the chat (feed and
+  composer) and its artifacts. Which chat a browser tab shows is the
+  tab's, not the app's: `page` takes its id in `opts`. Classes follow
+  rchat's stylesheet, which pchat ships as its own, plus pchat.css for
+  the sidebar. The texts are m1p reference tuples, `[:i18n :chat/new]`,
+  that `pchat.i18n/translate` turns into the language of the person."
   (:require [clojure.string :as str]
             [pchat.artifacts :as artifacts]
             [pchat.chat :as chat]
+            [pchat.chats :as chats]
             [pchat.genui :as genui]
-            [pchat.repl :as repl]
             [pchat.skills :as skills]
             [rchat.feed :as feed]))
 
-(def send-actions
-  "Sends the draft and the attachments, images and clips, then clears
-  both."
+(defn draft-key
+  "Where the browser keeps the draft of a chat; one per chat, so that a
+  switch of the chat keeps what was typed."
+  [id]
+  [:pchat/draft id])
+
+(defn attachments-key
+  [id]
+  [:pchat/attachments id])
+
+(defn send-actions
+  "Sends the draft and the attachments, images and clips, to the chat,
+  then clears both."
+  [id]
   [[:data/command
     {:command/kind :chat/send
-     :command/data {:text [:store/deref :pchat/draft]
-                    :images [:store/deref :pchat/attachments]}}
-    {:on-success [[:store/dissoc :pchat/draft]
-                  [:store/dissoc :pchat/attachments]]}]])
+     :command/data {:id id
+                    :text [:store/deref (draft-key id)]
+                    :images [:store/deref (attachments-key id)]}}
+    {:on-success [[:store/dissoc (draft-key id)]
+                  [:store/dissoc (attachments-key id)]]}]])
 
 (defn- tool-label
   "The row of a tool call, named for a person; a tool of a connection,
@@ -59,7 +73,7 @@
          [:pre.output (feed/cut 2000 text)])))])
 
 (defn- item-view
-  [index {:keys [kind text images media error handover?] :as item}]
+  [index {:keys [kind text images media error handover?] :as item} opts]
   (case kind
     :user
     [:div.item.user {:replicant/key index}
@@ -74,7 +88,8 @@
                  :loading "lazy"}])])
      (when (seq media)
        [:div.looks.clips
-        (for [{:keys [kind url]} media]
+        (for [{:keys [kind name]} media
+              :let [url (str (chats/url (:id opts)) "/uploads/" name)]]
           (if (= :audio kind)
             [:audio {:src url
                      :controls true
@@ -87,11 +102,11 @@
     (if handover?
       [:div.item.handover {:replicant/key index}
        [:div.label [:i18n :chat/handover]]
-       [:div.text (genui/children text)]
+       [:div.text (genui/children text opts)]
        (when error
          [:p.error error])]
       [:div.item.step {:replicant/key index}
-       [:div.text (genui/children text)]
+       [:div.text (genui/children text opts)]
        (when error
          [:p.error error])])
 
@@ -135,7 +150,7 @@
 
 (defn- run-view
   "A run of the webhook: when, how long, what it printed, what it made."
-  [{:keys [n at exit seconds output made]}]
+  [id {:keys [n at exit seconds output made]}]
   [:div.item.step.run {:replicant/key (str "run-" n)}
    [:details.work {:class (when-not (zero? exit) "failed")}
     [:summary [:i18n :hook/ran] " · " (clock at) " · " (str seconds " s")
@@ -146,7 +161,8 @@
       [:p.made
        (for [path made]
          [:button.link {:on {:click [[:data/command {:command/kind :artifacts/open
-                                                     :command/data {:path path}}]]}}
+                                                     :command/data {:id id
+                                                                    :path path}}]]}}
           (artifacts/title path)])])]])
 
 (def shown-runs
@@ -201,14 +217,14 @@
 (defn feed
   ([chat]
    (feed chat nil))
-  ([{:keys [status runs] :as chat} intro]
+  ([{:keys [id status runs] :as chat} intro]
    [:section.feed {:data-stick-to-end "true"}
     intro
     (->> (with-handover chat)
          (map-indexed vector)
          (filter (fn [[_ item]] (shown? item)))
-         (map (fn [[index item]] (item-view index item))))
-    (map run-view (take-last shown-runs runs))
+         (map (fn [[index item]] (item-view index item {:id id}))))
+    (map #(run-view id %) (take-last shown-runs runs))
     (when (= :working status)
       [:div.item.working {:replicant/key "working"}
        [:span.dot]
@@ -337,8 +353,9 @@
     [:i18n :connections/add]]])
 
 (defn- agent-form
-  "The service named, the agent finds out the rest."
-  []
+  "The service named, the agent of the chat the tab shows finds out
+  the rest."
+  [id]
   [:div.box.agent
    [:h2 [:i18n :connections/agent-title]]
    [:p [:i18n :connections/agent-explain]]
@@ -347,15 +364,16 @@
              :aria-label [:i18n :connections/agent-placeholder]
              :on {:input [[:store/assoc :pchat/connection-service :event/target.value]]}}]
     [:button {:on {:click [[:data/command {:command/kind :connections/agent
-                                           :command/data {:service [:store/deref :pchat/connection-service]}}
+                                           :command/data {:id id
+                                                          :service [:store/deref :pchat/connection-service]}}
                             {:on-success [[:store/dissoc :pchat/connection-service]]}]]}}
      [:i18n :connections/agent]]]])
 
 (defn connections-tab
   "The Connections tab of the settings: what a connection is, the
   connections one row each, the form for a new one, and the way to let
-  the agent do it."
-  [connections]
+  the agent of the chat `id` do it."
+  [connections id]
   [:section.connections
    [:p.explain [:i18n :connections/explain]]
    [:div.list
@@ -365,7 +383,7 @@
    (when (seq connections)
      [:p.note [:i18n :connections/next-message]])
    (connection-form connections)
-   (agent-form)])
+   (agent-form id)])
 
 (defn appearance-tab
   "The Appearance tab of the settings: the scheme of the page, light,
@@ -407,22 +425,24 @@
      :else nil)])
 
 (def tabs
-  "The tabs of the settings, each with the view of the db it shows; the
-  first one is the default. More follow here."
+  "The tabs of the settings, each with the view of the db and the id of
+  the chat the tab shows; the first one is the default. More follow
+  here."
   [{:id :connections
     :label [:i18n :connections/button]
-    :view (fn [db] (connections-tab (:connections db)))}
+    :view (fn [db id] (connections-tab (:connections db) id))}
    {:id :appearance
     :label [:i18n :theme/tab]
-    :view (fn [_db] (appearance-tab))}
+    :view (fn [_db _id] (appearance-tab))}
    {:id :updates
     :label [:i18n :updates/tab]
-    :view (fn [db] (updates-tab (:update db)))}])
+    :view (fn [db _id] (updates-tab (:update db)))}])
 
 (defn settings-view
   "In place of the chat: a bar with the way back, the tabs, the one
-  chosen. `:settings-tab` in the db names it."
-  [{:keys [settings-tab] :as db}]
+  chosen. `:settings-tab` in the db names it; `id` is the chat the
+  tab shows, for what the settings do with a chat."
+  [{:keys [settings-tab] :as db} id]
   (let [current (or settings-tab (:id (first tabs)))]
     (list
      [:header.bar
@@ -438,9 +458,9 @@
                                                    :command/data {:tab (clojure.core/name id)}}]]}}
          label])]
      [:div.settings
-      (some (fn [{:keys [id view]}]
-              (when (= id current)
-                (view db)))
+      (some (fn [{:keys [view] tab-id :id}]
+              (when (= tab-id current)
+                (view db id)))
             tabs)])))
 
 (defn header
@@ -471,15 +491,16 @@
    (delete-controls chat deleting)])
 
 (defn composer
-  "`:placeholder` in `opts` is the task's, the general one without."
-  [{:keys [status]} {:keys [key-missing? placeholder]}]
+  "`:placeholder` in `opts` is the task's, the general one without. The
+  uploads go to the chat's own folder."
+  [{:keys [id status]} {:keys [key-missing? placeholder]}]
   [:div.composer
    (when key-missing?
      [:p.error [:i18n :composer/key-missing]])
-   [:ui/composer {:ui/store-key :pchat/draft
-                  :ui/attachments-key :pchat/attachments
-                  :ui/upload-url "/upload"
-                  :ui/send send-actions
+   [:ui/composer {:ui/store-key (draft-key id)
+                  :ui/attachments-key (attachments-key id)
+                  :ui/upload-url (str (chats/url id) "/upload")
+                  :ui/send (send-actions id)
                   :ui/send-label [:i18n :composer/send]
                   :ui/attach-title [:i18n :composer/attach]
                   :ui/remove-title [:i18n :composer/remove]
@@ -490,7 +511,8 @@
                   :rows 3
                   :placeholder (or placeholder [:i18n :composer/placeholder])}]
    (when (= :working status)
-     [:button.stop {:on {:click [[:data/command {:command/kind :chat/abort}]]}}
+     [:button.stop {:on {:click [[:data/command {:command/kind :chat/abort
+                                                 :command/data {:id id}}]]}}
       [:i18n :composer/stop]])])
 
 (defn- languages
@@ -504,13 +526,18 @@
       (str/upper-case (clojure.core/name l))])])
 
 (defn sidebar
-  "The rows are labels of the drawer checkbox: a tap on a phone opens
-  the chat and closes the drawer. On a desktop the checkbox changes
-  nothing. `:locale` in `opts` marks the language of the page."
+  "The rows are links to the chats' pages, `/chat/<id>`: the browser
+  runtime (`pchat.client`) follows them without a reload and tells the
+  server which chat this tab shows; a new tab or a reload lands on the
+  URL. `:id` in `opts` is the chat this tab shows, `:locale` the
+  language of the page. The button for a new chat names the tab
+  (`:pchat/tabid`, filled in by the runtime), so that the new chat
+  opens here."
   ([db]
    (sidebar db {}))
-  ([{:keys [chats current settings-open update]} {:keys [locale]}]
-  (let [chats (sort-by #(or (:updated %) 0) > (vals chats))]
+  ([{:keys [chats settings-open update]} {:keys [id locale]}]
+  (let [shown id
+        chats (sort-by #(or (:updated %) 0) > (vals chats))]
     [:aside.sidebar
      [:div.brand "pchat"
       ;; The running version, so that a person sees what an update did.
@@ -518,14 +545,9 @@
         [:span.version {:title "pchat version"} version])]
      [:label.new {:for "nav"
                   :role "button"
-                  :on {:click [[:data/command {:command/kind :chat/new}]]}}
+                  :on {:click [[:data/command {:command/kind :chat/new
+                                               :command/data {:tab :pchat/tabid}}]]}}
       [:i18n :chat/new]]
-     ;; The experiment: a chat whose design is made at the REPL
-     ;; (pchat.repl), shown live beside the chat.
-     [:label.new.repl {:for "nav"
-                       :role "button"
-                       :on {:click [[:data/command {:command/kind :chat/new-repl}]]}}
-      [:i18n :chat/new-repl]]
      ;; The list is keyed by its order: a chat that moves to the top
      ;; makes a new list. Replicant 2026.07.1 records the wrong vdom for
      ;; a row it moves to the front, and the row's next change (the
@@ -533,11 +555,10 @@
      [:ul.chats {:replicant/key (str/join " " (map :id chats))}
       (for [{:keys [id status] :as chat} chats]
         [:li {:replicant/key id
-              :class (str (when (= id current) "current")
+              :class (str (when (= id shown) "current")
                           (when (= :working status) " working"))}
-         [:label.row {:for "nav"
-                      :on {:click [[:data/command {:command/kind :chat/open
-                                                   :command/data {:id id}}]]}}
+         [:a.row {:href (chats/url id)
+                  :data-chat id}
           [:span.name (chat-name chat)]
           (when (= :working status)
             [:span.dot])]])]
@@ -550,48 +571,6 @@
                         :on {:click [[:data/command {:command/kind :settings/open}]]}}
        [:i18n :settings/button]]
       (languages locale)]])))
-
-(defn- timestamp
-  [seconds]
-  (let [seconds (double (or seconds 0))]
-    (format "%d:%04.1f" (long (quot seconds 60)) (rem seconds 60.0))))
-
-(defn- motion-pane
-  "The server-rendered player of a motion design: the frame at `t`,
-  play, a scrubber."
-  [{:keys [view-fn design duration] t :motion/t playing? :motion/playing?}]
-  (let [duration (double duration)]
-    [:div.motion
-     [:div.motion-frame (repl/render view-fn design t)]
-     [:div.fnmotion-controls
-      [:button {:on {:click [[:data/command {:command/kind :repl/toggle}]]}}
-       (if playing? [:i18n :repl/pause] [:i18n :repl/play])]
-      [:input {:type "range"
-               :min 0
-               :max 1000
-               :value (long (* 1000 (/ (or t 0.0) duration)))
-               :on {:input [[:data/command {:command/kind :repl/seek
-                                            :command/data {:value :event/target.value}}]]}}]
-      [:span.fnmotion-time (str (timestamp t) " / " (timestamp duration))]]]))
-
-(defn repl-pane
-  "The creation of a chat at the REPL (`pchat.repl/snapshot`): the
-  design rendered by the `design-view` the model defined, a motion
-  design with its player, the code of the creation underneath."
-  [{:keys [view-fn design duration source] :as pane}]
-  [:div.canvas-pane
-   [:div.canvas-bar
-    [:span.label [:i18n :repl/label]]
-    (when (and view-fn duration)
-      [:span.hint (str duration " s")])]
-   (cond
-     (and view-fn duration) (motion-pane pane)
-     view-fn [:div.design (repl/render view-fn design)]
-     :else [:div.canvas-placeholder [:i18n :repl/placeholder]])
-   (when source
-     [:details.work
-      [:summary [:i18n :repl/code]]
-      [:pre source]])])
 
 (defn views
   "On a phone the chat and the card take turns: two radios, the labels
@@ -628,17 +607,47 @@
        " "
        (update-button [:i18n :update/button])])))
 
+(defn migrate-banner
+  "Above the chat when the workspace holds chats from before 0.2.0 (see
+  `pchat.migrate`): the offer to bring them back, then what the script
+  is doing, how many came back, or why it failed."
+  [{:keys [needed? state progress count error]}]
+  (let [start (fn [label]
+                [:button.link {:on {:click [[:data/command {:command/kind :migrate/start}]]}} label])]
+    (case state
+      :running [:div.banner.migrate [:i18n :migrate/running {:progress (or progress "")}]]
+      :done [:div.banner.migrate
+             [:i18n :migrate/done {:count (or count 0)}]
+             " "
+             [:button.link {:on {:click [[:data/command {:command/kind :migrate/dismiss}]]}}
+              [:i18n :migrate/close]]]
+      :failed [:div.banner.migrate.failed
+               [:i18n :migrate/failed {:error (str error)}]
+               " "
+               (start [:i18n :migrate/retry])]
+      (when needed?
+        [:div.banner.migrate
+         [:i18n :migrate/found]
+         " "
+         (start [:i18n :migrate/start])]))))
+
 (defn page
-  "`opts`: `:key-missing?`, `:locale` (the language of the page, see
-  `pchat.i18n`) and `:project` (see `pchat.artifacts/view`). A new chat
-  shows the tasks to pick from first, when there are skills."
-  [{:keys [chats current deleting hook-open settings-open setup update] files :artifacts/list pane :repl/pane :as db} {:keys [locale] :as opts}]
-  (let [chat (get chats current)
-        repl? (= :repl (:mode chat))
+  "`opts`: `:id`, the chat this connection shows; `:note`, a line above
+  the chat when it is not the one the URL named; `:key-missing?`;
+  `:locale` (the language of the page, see `pchat.i18n`); `:project`
+  and `:share` (see `pchat.artifacts/view`); `:hook-url` (see
+  `hook-panel`). A new chat shows the tasks to pick from first, when
+  there are skills. `[:ui/url]` tells the browser the page of the chat
+  shown, for the address bar."
+  [{:keys [chats deleting hook-open settings-open setup update migration] :as db} {:keys [id note locale] :as opts}]
+  (let [chat (get chats id)
+        files (:artifacts/list chat)
         skill (skills/by-name (:skills db) (:task chat))
-        picking? (and (not repl?) (seq (:skills db)) (nil? (:task chat)) (empty? (:items chat)))
-        card? (or repl? (seq files))]
-    [:div.pchat {:lang (some-> locale name)}
+        picking? (and (seq (:skills db)) (nil? (:task chat)) (empty? (:items chat)))
+        card? (seq files)]
+    [:div.pchat {:lang (some-> locale name)
+                 :data-chat id}
+     [:ui/url {:ui/path (chats/url id)}]
      ;; The drawer state on a phone, toggled by labels, never rendered
      ;; with :checked so that the person's choice survives a frame.
      [:input#nav.toggle {:type "checkbox"}]
@@ -649,7 +658,8 @@
        [:div.rchat.settings-open {:replicant/key "settings"}
         (setup-banner setup)
         (update-banner update)
-        (settings-view db)]
+        (migrate-banner migration)
+        (settings-view db id)]
        [:div.rchat {:replicant/key "chat"
                     :class (when card? "with-card")}
         (when card?
@@ -658,10 +668,13 @@
            [:input#view-made.toggle {:type "radio" :name "view"}]))
         (setup-banner setup)
         (update-banner update)
+        (migrate-banner migration)
+        (when note
+          [:div.banner.note note])
         (header chat {:deleting deleting
                       :hook-open hook-open
                       :task (some-> skill (skills/text :title locale))})
-        (when (= current hook-open)
+        (when (= id hook-open)
           (hook-panel chat opts))
         (when card?
           (views))
@@ -674,6 +687,4 @@
              (composer chat (assoc opts :placeholder (some-> skill (skills/text :placeholder locale))))))]
          (when card?
            [:section.card
-            (if repl?
-              (repl-pane pane)
-              (artifacts/view db (assoc (select-keys opts [:project :share]) :chat-name chat-name)))])]])]))
+            (artifacts/view chat (select-keys opts [:project :share]))])]])]))

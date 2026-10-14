@@ -1,15 +1,15 @@
 (ns pchat.projects
-  "An artifact with a process: a directory under artifacts/ with a bb.edn.
-  pchat starts it (`bb -m artifact.main`, PORT and NREPL_PORT in its
-  environment) when it is on screen or changed lately, stops it when no
-  one wanted it for a while, shows its page in the iframe through a
-  proxy under /artifacts/<name>/, reloads a source file into it over
-  nREPL when the file changes, and writes its output to .log in the
-  directory. The
-  template under resources/pchat/template is the motion design project:
-  rframes, fnmotion and its server-side player.
+  "An artifact with a process: a directory under a chat's artifacts/
+  with a bb.edn. pchat starts it (`bb -m artifact.main`, PORT and
+  NREPL_PORT in its environment) when it is on screen or changed
+  lately, stops it when no one wanted it for a while, shows its page in
+  the iframe through a proxy under /chat/<id>/artifacts/<name>/,
+  reloads a source file into it over nREPL when the file changes, and
+  writes its output to .log in the directory. The template under
+  resources/pchat/template is the motion design project: rframes,
+  fnmotion and its server-side player.
 
-  The db key this namespace owns:
+  The key this namespace owns in a chat of the db:
 
       :projects {name {:port :nrepl-port :ready-at :exit :reload}}"
   (:require [babashka.fs :as fs]
@@ -17,21 +17,29 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [org.httpkit.server :as server]
+            [pchat.chats :as chats]
             [pchat.nrepl :as nrepl]))
 
 (defn handle
-  "{:db the app's atom, :dir the artifacts directory, :bb the babashka
-  executable (\"bb\")}"
-  [{:keys [dir bb] :as opts}]
+  "{:db the app's atom, :chats-dir the folder of the chats, :bb the
+  babashka executable (\"bb\"), :shown? a function of a chat id, whether
+  someone looks at the chat right now (everyone, by default)}. The
+  processes are kept by [chat-id name]."
+  [{:keys [chats-dir bb shown?] :as opts}]
   (assoc opts
-         :dir (io/file dir)
+         :chats-dir (io/file chats-dir)
          :bb (or bb "bb")
+         :shown? (or shown? (constantly true))
          :procs (atom {})))
+
+(defn- project-dir
+  [{:keys [chats-dir]} id name]
+  (io/file (chats/artifacts-dir chats-dir id) (str name)))
 
 (defn names
   "The artifacts that are projects: subdirectories with a bb.edn."
   [dir]
-  (->> (.listFiles (io/file dir))
+  (->> (or (.listFiles (io/file dir)) [])
        (filter #(and (.isDirectory %)
                      (not (str/starts-with? (.getName %) "."))
                      (.isFile (io/file % "bb.edn"))))
@@ -62,10 +70,12 @@
        (reduce max 0)))
 
 (defn- wanted?
-  "The project on screen, or one that changed lately."
-  [{:keys [db dir]} name now]
-  (or (= name (:artifacts/current @db))
-      (< (- now (newest-change (io/file dir name))) recent-ms)))
+  "The project on screen in a chat someone looks at, or one that
+  changed lately."
+  [{:keys [db shown?] :as handle} id name now]
+  (or (and (shown? id)
+           (= name (get-in @db [:chats id :artifacts/current])))
+      (< (- now (newest-change (project-dir handle id name))) recent-ms)))
 
 (defn- src-mtimes
   [project-dir]
@@ -75,8 +85,8 @@
           [(str file) (.lastModified file)])))
 
 (defn start!
-  [{:keys [dir bb procs db]} name]
-  (let [project-dir (io/file dir name)
+  [{:keys [chats-dir bb procs db] :as handle} id name]
+  (let [project-dir (project-dir handle id name)
         port (free-port)
         nrepl-port (free-port)
         log (io/file project-dir ".log")
@@ -86,32 +96,43 @@
                             :err log
                             :extra-env {"PORT" (str port)
                                         "NREPL_PORT" (str nrepl-port)
-                                        "PCHAT_BASE" (str "/artifacts/" name)
+                                        "TMPDIR" (str (chats/tmp-dir chats-dir id))
+                                        "PCHAT_BASE" (str (chats/url id) "/artifacts/" name)
                                         ;; The project exits by itself when
                                         ;; pchat is gone, hook or no hook.
                                         "PCHAT_PID" (str (.pid (java.lang.ProcessHandle/current)))}})]
-    (swap! procs assoc name {:process p
-                             :port port
-                             :nrepl-port nrepl-port
-                             :started (System/currentTimeMillis)
-                             :last-wanted (System/currentTimeMillis)
-                             :mtimes (src-mtimes project-dir)})
-    (swap! db assoc-in [:projects name] {:port port
-                                         :nrepl-port nrepl-port
-                                         :ready-at nil})
+    (swap! procs assoc [id name] {:process p
+                                  :port port
+                                  :nrepl-port nrepl-port
+                                  :started (System/currentTimeMillis)
+                                  :last-wanted (System/currentTimeMillis)
+                                  :mtimes (src-mtimes project-dir)})
+    (swap! db assoc-in [:chats id :projects name] {:port port
+                                                   :nrepl-port nrepl-port
+                                                   :ready-at nil})
     name))
 
 (defn stop!
-  [{:keys [procs db]} name]
-  (when-let [{:keys [process]} (get @procs name)]
+  [{:keys [procs db]} id name]
+  (when-let [{:keys [process]} (get @procs [id name])]
     (process/destroy-tree process))
-  (swap! procs dissoc name)
-  (swap! db update :projects dissoc name))
+  (swap! procs dissoc [id name])
+  (swap! db (fn [db]
+              (if (get-in db [:chats id])
+                (update-in db [:chats id :projects] dissoc name)
+                db))))
+
+(defn stop-chat!
+  "Ends the projects of a chat, for its deletion."
+  [{:keys [procs] :as handle} id]
+  (doseq [[chat-id name] (keys @procs)
+          :when (= id chat-id)]
+    (stop! handle id name)))
 
 (defn stop-all!
   [{:keys [procs] :as handle}]
-  (doseq [name (keys @procs)]
-    (stop! handle name)))
+  (doseq [[id name] (keys @procs)]
+    (stop! handle id name)))
 
 (defn- answers?
   [port]
@@ -123,24 +144,24 @@
       false)))
 
 (defn- check-ready!
-  [{:keys [db procs]} name]
-  (let [{:keys [port process]} (get @procs name)]
-    (when (and port (nil? (get-in @db [:projects name :ready-at])))
+  [{:keys [db procs]} id name]
+  (let [{:keys [port process]} (get @procs [id name])]
+    (when (and port (nil? (get-in @db [:chats id :projects name :ready-at])))
       (cond
         (not (.isAlive (:proc process)))
-        (swap! db assoc-in [:projects name :exit] (:exit @process))
+        (swap! db assoc-in [:chats id :projects name :exit] (:exit @process))
 
         (answers? port)
-        (swap! db assoc-in [:projects name :ready-at] (System/currentTimeMillis))))))
+        (swap! db assoc-in [:chats id :projects name :ready-at] (System/currentTimeMillis))))))
 
 (defn- reload-changed!
   "A source file the agent saved is loaded into the running process."
-  [{:keys [dir db procs]} name]
-  (let [{:keys [nrepl-port mtimes]} (get @procs name)
-        now-mtimes (src-mtimes (io/file dir name))]
-    (when (and (get-in @db [:projects name :ready-at])
+  [{:keys [db procs] :as handle} id name]
+  (let [{:keys [nrepl-port mtimes]} (get @procs [id name])
+        now-mtimes (src-mtimes (project-dir handle id name))]
+    (when (and (get-in @db [:chats id :projects name :ready-at])
                (not= mtimes now-mtimes))
-      (swap! procs assoc-in [name :mtimes] now-mtimes)
+      (swap! procs assoc-in [[id name] :mtimes] now-mtimes)
       (doseq [[file mtime] now-mtimes
               :when (not= mtime (get mtimes file))]
         (future
@@ -154,55 +175,58 @@
                                      result)
                                    (catch Exception e
                                      {:ex (ex-message e)}))]
-            (swap! db assoc-in [:projects name :reload]
-                   {:file (str (fs/relativize (io/file dir name) file))
+            (swap! db assoc-in [:chats id :projects name :reload]
+                   {:file (str (fs/relativize (project-dir handle id name) file))
                     :at (System/currentTimeMillis)
                     :error (or ex (when (seq err) err))})))))))
 
 (defn- restart-exited!
   "A project that died comes back, not more often than every ten seconds."
-  [{:keys [procs] :as handle} name]
-  (let [{:keys [process started]} (get @procs name)]
+  [{:keys [procs] :as handle} id name]
+  (let [{:keys [process started]} (get @procs [id name])]
     (when (and process
                (not (.isAlive (:proc process)))
                (< 10000 (- (System/currentTimeMillis) started)))
-      (stop! handle name)
-      (start! handle name))))
+      (stop! handle id name)
+      (start! handle id name))))
 
 (defn- stop-idle!
   "A running project no one wanted for `idle-ms` is stopped: a process
   and its memory for nothing."
-  [{:keys [procs] :as handle} name now wanted?]
-  (when-let [{:keys [last-wanted]} (get @procs name)]
+  [{:keys [procs] :as handle} id name now wanted?]
+  (when-let [{:keys [last-wanted]} (get @procs [id name])]
     (if wanted?
-      (swap! procs assoc-in [name :last-wanted] now)
+      (swap! procs assoc-in [[id name] :last-wanted] now)
       (when (< idle-ms (- now last-wanted))
-        (stop! handle name)))))
+        (stop! handle id name)))))
 
 (defn sync!
-  "Starts the projects that are wanted, the one on screen and the ones
-  with recent changes, stops the ones that went or idled, notes which
-  are ready, reloads changed sources, restarts the dead."
-  [{:keys [dir procs] :as handle}]
-  (let [current (set (names dir))
+  "Over the chats of the db: starts the projects that are wanted, the
+  one on screen and the ones with recent changes, stops the ones that
+  went or idled, notes which are ready, reloads changed sources,
+  restarts the dead."
+  [{:keys [db chats-dir procs] :as handle}]
+  (let [current (set (for [id (keys (:chats @db))
+                           name (names (chats/artifacts-dir chats-dir id))]
+                       [id name]))
         now (System/currentTimeMillis)]
-    (doseq [name (keys @procs)
-            :when (not (contains? current name))]
-      (stop! handle name))
-    (doseq [name current
-            :let [wanted? (wanted? handle name now)]]
-      (if (contains? @procs name)
-        (do (check-ready! handle name)
-            (reload-changed! handle name)
-            (restart-exited! handle name)
-            (stop-idle! handle name now wanted?))
+    (doseq [[id name] (keys @procs)
+            :when (not (contains? current [id name]))]
+      (stop! handle id name))
+    (doseq [[id name] current
+            :let [wanted? (wanted? handle id name now)]]
+      (if (contains? @procs [id name])
+        (do (check-ready! handle id name)
+            (reload-changed! handle id name)
+            (restart-exited! handle id name)
+            (stop-idle! handle id name now wanted?))
         (when wanted?
-          (start! handle name))))))
+          (start! handle id name))))))
 
 (defn eval!
   "Evaluates `code` in the project's process."
-  [{:keys [procs]} name code]
-  (if-let [{:keys [nrepl-port]} (get @procs name)]
+  [{:keys [procs]} id name code]
+  (if-let [{:keys [nrepl-port]} (get @procs [id name])]
     (nrepl/eval! nrepl-port code)
     {:ex (str "The project " name " is not running.")}))
 
@@ -299,18 +323,12 @@
     [name (or (first rest) "")]))
 
 (defn handler
-  "The handler of /artifacts/*: a running project's page and stream go
-  to its process; anything else is left to the next route."
-  [{:keys [procs db]} w]
+  "The handler of /chat/<id>/artifacts/*, the rest of the path under
+  `:*`: a running project's page and stream go to its process; anything
+  else is left to the caller, without a response."
+  [{:keys [procs db]} id w]
   (let [[name rest] (split-path (get-in w [:ring/route-params :*]))
-        {:keys [port]} (get @procs name)]
-    (if (and port (get-in @db [:projects name :ready-at]))
+        {:keys [port]} (get @procs [id name])]
+    (if (and port (get-in @db [:chats id :projects name :ready-at]))
       (proxy! port rest w)
       w)))
-
-(defn register
-  [handle]
-  [{:ring/route [:get "/artifacts/*"]
-    :ring/handler (fn [w] (handler handle w))}
-   {:ring/route [:post "/artifacts/*"]
-    :ring/handler (fn [w] (handler handle w))}])

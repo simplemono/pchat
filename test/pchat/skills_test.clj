@@ -72,7 +72,7 @@ metadata:
 
 (deftest picker-test
   (let [all (skills/load-all (checkout!))
-        page (fn [chat] (i18n/translate (view/page {:chats {"a" chat} :current "a" :skills all} {:locale :de}) :de))]
+        page (fn [chat] (i18n/translate (view/page {:chats {"a" chat} :skills all} {:id "a" :locale :de}) :de))]
     (testing "a new chat shows the tasks and no composer"
       (let [shown (page chat/empty-chat)]
         (is (some #{"Kinetic Shorts"} (texts shown)))

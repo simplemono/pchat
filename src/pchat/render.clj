@@ -1,16 +1,17 @@
 (ns pchat.render
-  "A video from an artifact project on a click: `bin/render <name>` as a
-  process of its own, its progress in the db while it runs. The file it
-  writes shows up as an artifact by itself. Stop ends the process and
-  removes the half-written file.
+  "A video from an artifact project on a click: `bin/render <name>` in
+  the chat's folder as a process of its own, its progress in the db
+  while it runs. The file it writes shows up as an artifact by itself.
+  Stop ends the process and removes the half-written file.
 
-  The db key this namespace owns:
+  The key this namespace owns in a chat of the db:
 
       :renders {name {:started ms :progress \"frame 30/180\" :exit n :error \"...\"}}"
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
             [clojure.java.io :as io]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [pchat.chats :as chats]))
 
 (def video-tools
   "What a video needs on the machine: ffmpeg, a Chrome, the HyperFrames
@@ -58,19 +59,21 @@
            "), so no video: the operator installs them."))))
 
 (defn handle
-  "{:db the app's atom, :workspace the directory bin/render runs in, :bb
-  the babashka executable, :env extra environment for the process,
+  "{:db the app's atom, :chats-dir the folder of the chats, :bb the
+  babashka executable, :env extra environment for the process,
   :markers-dir where an install leaves its marker files (`~/.local`),
-  :on-finish a function of the name, called once a render ended by
-  itself (not after a stop), after its exit is in the db}"
-  [opts]
+  :on-finish a function of the chat id and the name, called once a
+  render ended by itself (not after a stop), after its exit is in the
+  db}. The processes are kept by [chat-id name]."
+  [{:keys [chats-dir] :as opts}]
   (-> opts
+      (assoc :chats-dir (io/file chats-dir))
       (update :markers-dir #(or % (io/file (System/getProperty "user.home") ".local")))
       (assoc :procs (atom {}))))
 
 (defn running?
-  [{:keys [procs]} name]
-  (when-let [{:keys [process]} (get @procs name)]
+  [{:keys [procs]} id name]
+  (when-let [{:keys [process]} (get @procs [id name])]
     (.isAlive (:proc process))))
 
 (defn any-running?
@@ -88,16 +91,16 @@
 
 (defn output-file
   "Where bin/render writes the video of the project."
-  [{:keys [workspace]} name]
-  (io/file workspace "artifacts" (str name ".mp4")))
+  [{:keys [chats-dir]} id name]
+  (io/file (chats/artifacts-dir chats-dir id) (str name ".mp4")))
 
 (defn- finish!
   "The exit of the process into the db: an error with the last line of
   the output, nothing of it after a stop."
-  [{:keys [db procs on-finish]} name exit lines]
-  (let [stopped? (get-in @procs [name :stopped?])]
-    (swap! procs dissoc name)
-    (swap! db update :renders
+  [{:keys [db procs on-finish]} id name exit lines]
+  (let [stopped? (get-in @procs [[id name] :stopped?])]
+    (swap! procs dissoc [id name])
+    (swap! db update-in [:chats id :renders]
            (fn [renders]
              (if stopped?
                (dissoc renders name)
@@ -110,59 +113,67 @@
                                (assoc :error (or (last (remove #(str/starts-with? % "The render failed") lines))
                                                  (str "exit " exit))))))))))
     (when (and on-finish (not stopped?))
-      (on-finish name))))
+      (on-finish id name))))
 
 (defn- refuse!
   "No process: the render is over before it started, with the message
   as its error, where the person reads it."
-  [{:keys [db]} name message]
-  (swap! db assoc-in [:renders name] {:started (System/currentTimeMillis)
-                                      :exit 1
-                                      :error message})
+  [{:keys [db]} id name message]
+  (swap! db assoc-in [:chats id :renders name] {:started (System/currentTimeMillis)
+                                                :exit 1
+                                                :error message})
   name)
 
 (defn start!
-  "Starts the render of the project `name`, unless it runs already or
-  the video tools are not there yet (then the reason is the render's
-  error, see `not-ready-message`)."
-  [{:keys [db workspace bb env procs markers-dir] :as handle} name]
-  (when-not (running? handle name)
+  "Starts the render of the project `name` of the chat, unless it runs
+  already or the video tools are not there yet (then the reason is the
+  render's error, see `not-ready-message`)."
+  [{:keys [db chats-dir bb env procs markers-dir] :as handle} id name]
+  (when-not (running? handle id name)
     (if-let [message (not-ready-message (missing-video-tools env) (video-tools-state markers-dir))]
-      (refuse! handle name message)
+      (refuse! handle id name message)
       (let [p (process/process [(or bb "bb") "bin/render" (str name)]
-                             {:dir (str workspace)
-                              :out :stream
-                              :err :stream
-                              :extra-env (or env {})})
-          lines (atom [])
-          note! (fn [line]
-                  (swap! lines #(vec (take-last 20 (conj % line))))
-                  (when (re-find #"^frame \d+/\d+" line)
-                    (swap! db assoc-in [:renders name :progress] line)))]
-      (swap! procs assoc name {:process p})
-      (swap! db assoc-in [:renders name] {:started (System/currentTimeMillis)})
-      (future (read-lines! (:out p) note!))
-      (future (read-lines! (:err p) note!))
-      (future
-        (let [{:keys [exit]} @p]
-          ;; The readers are done with their streams by now, or nearly.
-          (Thread/sleep 100)
-          (finish! handle name exit @lines)))
-      name))))
+                               {:dir (str (chats/dir chats-dir id))
+                                :out :stream
+                                :err :stream
+                                :extra-env (assoc (or env {})
+                                                  "TMPDIR" (str (chats/tmp-dir chats-dir id)))})
+            lines (atom [])
+            note! (fn [line]
+                    (swap! lines #(vec (take-last 20 (conj % line))))
+                    (when (re-find #"^frame \d+/\d+" line)
+                      (swap! db assoc-in [:chats id :renders name :progress] line)))]
+        (swap! procs assoc [id name] {:process p})
+        (swap! db assoc-in [:chats id :renders name] {:started (System/currentTimeMillis)})
+        (future (read-lines! (:out p) note!))
+        (future (read-lines! (:err p) note!))
+        (future
+          (let [{:keys [exit]} @p]
+            ;; The readers are done with their streams by now, or nearly.
+            (Thread/sleep 100)
+            (finish! handle id name exit @lines)))
+        name))))
 
 (defn stop!
   "Ends a running render; the file it was writing goes with it."
-  [{:keys [db procs] :as handle} name]
-  (when-let [{:keys [process]} (get @procs name)]
-    (swap! procs assoc-in [name :stopped?] true)
+  [{:keys [db procs] :as handle} id name]
+  (when-let [{:keys [process]} (get @procs [id name])]
+    (swap! procs assoc-in [[id name] :stopped?] true)
     (process/destroy-tree process)
-    (let [started (get-in @db [:renders name :started] 0)
-          file (output-file handle name)]
+    (let [started (get-in @db [:chats id :renders name :started] 0)
+          file (output-file handle id name)]
       ;; ffmpeg wrote into it since the start: a torso.
       (when (and (.isFile file) (<= started (.lastModified file)))
         (io/delete-file file true)))
-    (swap! db update :renders dissoc name)
+    (swap! db update-in [:chats id :renders] dissoc name)
     name))
+
+(defn stop-chat!
+  "Ends the renders of a chat, for its deletion."
+  [{:keys [procs] :as handle} id]
+  (doseq [[chat-id name] (keys @procs)
+          :when (= id chat-id)]
+    (stop! handle id name)))
 
 (defn stop-all!
   [{:keys [procs]}]

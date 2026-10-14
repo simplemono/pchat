@@ -3,8 +3,9 @@
 ;; from a description, by an image model through OpenRouter
 ;; (OPENROUTER_API_KEY). <file> is a path under artifacts/, "card/pool.png" or
 ;; "pool.png"; --ratio is 1:1, 9:16 (a story), 16:9, 4:5, 3:4 ...; --from takes
-;; a picture under artifacts/ or /looks/ as the starting point, for a photo
-;; turned into a style. The path and the cost are printed.
+;; a picture under artifacts/ or uploads/ (the pictures the person attached)
+;; as the starting point, for a photo turned into a style. The path and the
+;; cost are printed.
 (require '[babashka.fs :as fs]
          '[babashka.http-client :as http]
          '[cheshire.core :as json]
@@ -32,14 +33,16 @@
         :else (recur (rest args) (update out :args conj a))))))
 
 (defn source-file
-  "The picture --from names: under artifacts/, or an upload under /looks/."
+  "The picture --from names: under artifacts/, or one the person
+  attached under uploads/ (/looks/<name> from earlier builds)."
   [from]
   (let [from (str/replace (str from) #"^/" "")
+        from (str/replace from #"^looks/" "uploads/")
         candidates [(fs/file from)
                     (fs/file "artifacts" from)
-                    (fs/file ".pchat" from)]]
+                    (fs/file "uploads" from)]]
     (or (some #(when (fs/regular-file? %) %) candidates)
-        (fail (str "There is no picture " from " under artifacts/ or /looks/.")))))
+        (fail (str "There is no picture " from " under artifacts/ or uploads/.")))))
 
 (defn data-url
   [file]

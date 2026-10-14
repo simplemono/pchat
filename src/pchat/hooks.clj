@@ -1,13 +1,14 @@
 (ns pchat.hooks
   "An automation: a chat's webhook runs the script the agent wrote. The
   address `/hook/<chat-id>/<secret>` is outside the token; a call runs
-  `hooks/<chat-id>.clj` in the workspace with the body of the request on
-  its standard input, and what it printed, its exit and the artifacts it
-  made are a run, shown in the chat and logged for the agent in
-  `hooks/<chat-id>.log`. One run at a time per chat, the others wait.
+  `hook.clj` in the chat's folder (`pchat.chats`) with the body of the
+  request on its standard input, and what it printed, its exit and the
+  artifacts it made are a run, shown in the chat and logged for the
+  agent in `hook.log` beside the script. One run at a time per chat,
+  the others wait.
 
-  The secrets live in `.pchat/hooks.edn`, `{chat-id {:secret :created}}`,
-  the runs of a chat in `.pchat/runs/<chat-id>.edn`, the last fifty.
+  The secret of a chat lives in `.hook.edn` of its folder, `{:secret
+  :created}`, its runs in `.runs.edn`, the last fifty.
 
   The keys this namespace owns in a chat of the db, and in the db:
 
@@ -19,6 +20,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [cheshire.core :as json]
+            [pchat.chats :as chats]
             [rframes.http :as http]))
 
 (def path-prefix
@@ -43,28 +45,33 @@
   4000)
 
 (defn handle
-  "{:db the app's atom, :workspace the directory the scripts run in, :bb
-  the babashka executable, :env extra environment for a run, :artifacts
-  the artifacts directory}"
-  [{:keys [workspace] :as opts}]
+  "{:db the app's atom, :chats-dir the folder of the chats, :bb the
+  babashka executable, :env extra environment for a run}"
+  [{:keys [chats-dir] :as opts}]
   (assoc opts
-         :workspace (io/file workspace)
-         :file (io/file workspace ".pchat" "hooks.edn")
-         :runs-dir (io/file workspace ".pchat" "runs")
+         :chats-dir (io/file chats-dir)
          :procs (atom {})
          :locks (atom {})))
 
+(defn chat-dir
+  [{:keys [chats-dir]} id]
+  (chats/dir chats-dir id))
+
 (defn script-file
-  [{:keys [workspace]} id]
-  (io/file workspace "hooks" (str id ".clj")))
+  [handle id]
+  (io/file (chat-dir handle id) "hook.clj"))
 
 (defn log-file
-  [{:keys [workspace]} id]
-  (io/file workspace "hooks" (str id ".log")))
+  [handle id]
+  (io/file (chat-dir handle id) "hook.log"))
+
+(defn- hook-file
+  [handle id]
+  (io/file (chat-dir handle id) ".hook.edn"))
 
 (defn- runs-file
-  [{:keys [runs-dir]} id]
-  (io/file runs-dir (str id ".edn")))
+  [handle id]
+  (io/file (chat-dir handle id) ".runs.edn"))
 
 (defn- read-edn
   [file default]
@@ -78,16 +85,17 @@
   (spit file (pr-str value)))
 
 (defn load!
-  "The hooks and the runs of the chats in the db."
-  [{:keys [db file] :as handle}]
-  (let [hooks (read-edn file {})]
-    (swap! db update :chats
-           (fn [chats]
-             (into {}
-                   (for [[id chat] chats]
-                     [id (cond-> chat
-                           (get hooks id) (assoc :hook (get hooks id))
-                           :always (assoc :runs (read-edn (runs-file handle id) [])))]))))))
+  "The hook and the runs of every chat in the db, from the chats'
+  files."
+  [{:keys [db] :as handle}]
+  (doseq [id (keys (:chats @db))]
+    (let [hook (read-edn (hook-file handle id) nil)
+          runs (read-edn (runs-file handle id) [])]
+      (swap! db update-in [:chats id]
+             (fn [chat]
+               (cond-> (assoc chat :runs runs)
+                 hook (assoc :hook hook)
+                 (not hook) (dissoc :hook)))))))
 
 (defn- new-secret
   []
@@ -115,11 +123,11 @@
 (defn create!
   "The webhook of the chat, with a new secret; the script gets its stub
   when there is none yet."
-  [{:keys [db file] :as handle} id]
+  [{:keys [db] :as handle} id]
   (let [hook {:secret (new-secret)
               :created (System/currentTimeMillis)}
         script (script-file handle id)]
-    (write-edn! file (assoc (read-edn file {}) id hook))
+    (write-edn! (hook-file handle id) hook)
     (when-not (.isFile script)
       (io/make-parents script)
       (spit script stub)
@@ -128,19 +136,12 @@
     hook))
 
 (defn remove!
-  "The address stops working; the script and the log stay."
-  [{:keys [db file]} id]
-  (write-edn! file (dissoc (read-edn file {}) id))
+  "The address stops working; the script and the log stay. Everything
+  of the webhook goes with the chat's folder when the chat is deleted."
+  [{:keys [db] :as handle} id]
+  (io/delete-file (hook-file handle id) true)
   (swap! db update-in [:chats id] dissoc :hook)
   nil)
-
-(defn forget!
-  "Everything of the chat's webhook goes with the chat."
-  [{:keys [db] :as handle} id]
-  (remove! handle id)
-  (doseq [file [(script-file handle id) (log-file handle id) (runs-file handle id)]]
-    (io/delete-file file true))
-  (swap! db update-in [:chats id] dissoc :runs))
 
 (defn url
   [base-url id secret]
@@ -148,10 +149,10 @@
 
 (defn prompt
   "What the agent is told about the webhook of its chat."
-  [id]
-  (str "This chat has a webhook, an address another service calls when something happened there, for example a new review, a form sent, a time of day: the person turns it on with the Webhook button and pastes the address into the service. A call runs the script `hooks/" id ".clj` in this folder with the body of the request on standard input (JSON as a rule) and `PCHAT_HOOK_METHOD`, `PCHAT_HOOK_QUERY` and `PCHAT_HOOK_CONTENT_TYPE` in the environment; what it prints and the artifacts it makes are shown in the chat as a run. "
-       "When the person wants something to happen by itself, write that script: plain babashka, deterministic, the same tools as you (`bin/render`, `bin/music`, `bin/image`, `bin/voice`), `bin/ask` for a small judgment of a model, data the person gives you in a plain file under `data/`. Try it yourself: `echo '{...}' | bb hooks/" id ".clj`. "
-       "The runs are in `hooks/" id ".log`, the newest at the end, with the body each call brought: read it to see what the service sends, or why a run failed."))
+  []
+  (str "This chat has a webhook, an address another service calls when something happened there, for example a new review, a form sent, a time of day: the person turns it on with the Webhook button and pastes the address into the service. A call runs the script `hook.clj` in this folder with the body of the request on standard input (JSON as a rule) and `PCHAT_HOOK_METHOD`, `PCHAT_HOOK_QUERY` and `PCHAT_HOOK_CONTENT_TYPE` in the environment; what it prints and the artifacts it makes are shown in the chat as a run. "
+       "When the person wants something to happen by itself, write that script: plain babashka, deterministic, the same tools as you (`bin/render`, `bin/music`, `bin/image`, `bin/voice`), `bin/ask` for a small judgment of a model, data the person gives you in a plain file under `data/`. Try it yourself: `echo '{...}' | bb hook.clj`. "
+       "The runs are in `hook.log`, the newest at the end, with the body each call brought: read it to see what the service sends, or why a run failed."))
 
 (defn- lock-of
   [{:keys [locks]} id]
@@ -166,16 +167,15 @@
       text)))
 
 (defn- made-since
-  "The artifacts written since `since`, newest first."
-  [{:keys [artifacts]} since]
-  (when artifacts
-    (let [dir (io/file artifacts)]
-      (->> (file-seq dir)
-           (filter #(and (.isFile %) (<= since (.lastModified %))))
-           (map #(str (.relativize (.toPath dir) (.toPath %))))
-           (remove #(some (fn [part] (str/starts-with? part ".")) (str/split % #"/")))
-           (sort)
-           (vec)))))
+  "The artifacts of the chat written since `since`."
+  [{:keys [chats-dir]} id since]
+  (let [dir (chats/artifacts-dir chats-dir id)]
+    (->> (file-seq dir)
+         (filter #(and (.isFile %) (<= since (.lastModified %))))
+         (map #(str (.relativize (.toPath dir) (.toPath %))))
+         (remove #(some (fn [part] (str/starts-with? part ".")) (str/split % #"/")))
+         (sort)
+         (vec))))
 
 (defn- log!
   [handle id {:keys [n at method bytes exit seconds output]} body]
@@ -200,16 +200,17 @@
     run))
 
 (defn- execute!
-  "The script with the body on its standard input; what came out, in at
-  most ten minutes."
-  [{:keys [workspace bb env procs] :as handle} id ^bytes body request]
-  (let [p (process/process [(or bb "bb") (str (script-file handle id))]
-                           {:dir (str workspace)
+  "The script in the chat's folder with the body on its standard input;
+  what came out, in at most ten minutes."
+  [{:keys [chats-dir bb env procs] :as handle} id ^bytes body request]
+  (let [p (process/process [(or bb "bb") "hook.clj"]
+                           {:dir (str (chat-dir handle id))
                             :in (java.io.ByteArrayInputStream. body)
                             :out :string
                             :err :string
                             :extra-env (merge (or env {})
-                                              {"PCHAT_HOOK_METHOD" (str/upper-case (name (or (:request-method request) :post)))
+                                              {"TMPDIR" (str (chats/tmp-dir chats-dir id))
+                                               "PCHAT_HOOK_METHOD" (str/upper-case (name (or (:request-method request) :post)))
                                                "PCHAT_HOOK_QUERY" (str (:query-string request))
                                                "PCHAT_HOOK_CONTENT_TYPE" (str (get-in request [:headers "content-type"]))})})]
     (swap! procs assoc id p)
@@ -241,7 +242,7 @@
                :exit exit
                :seconds (/ (Math/round (/ (- (System/currentTimeMillis) at) 100.0)) 10.0)
                :output (cut output max-output-chars)
-               :made (made-since handle at)}]
+               :made (made-since handle id at)}]
       (log! handle id run (String. body "UTF-8"))
       (record! handle id run))))
 

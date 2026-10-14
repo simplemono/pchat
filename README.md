@@ -17,9 +17,11 @@ MIT. Storrito-specific parts are fine here, customer-specific ones are not.
    files and the model. Model `openrouter/openai/gpt-6.1-sol` on the
    operator's OpenRouter key, `--approve`: the VM the chat runs on is the
    sandbox.
-2. **Chats:** free conversations, one pi session each, all in one shared
-   workspace folder. Projects as a grouping are not in the MVP.
-3. **Artifacts:** files the agent writes into the workspace's `artifacts/`
+2. **Chats:** free conversations, one pi session each. Since 0.2.0 every
+   chat works in a folder of its own (see "The chats"); before, all of
+   them shared the one workspace folder. Projects as a grouping are not
+   in the MVP.
+3. **Artifacts:** files the agent writes into the chat's `artifacts/`
    folder, shown beside the chat by type with live reload: HTML in an
    iframe (controls live inside the page), images, videos, and
    [fnmotion](https://github.com/simplemono/fnmotion) motion designs with a
@@ -58,11 +60,69 @@ bb smoke                             # one real agent run: a card, music, the vi
 ```
 
 `pi` must be on the PATH ([pi-mono](https://github.com/earendil-works/pi-mono),
-`npm i -g @earendil-works/pi-coding-agent`). The agent works in
-`./workspace` (`PCHAT_WORKSPACE`), its sessions under `workspace/.pchat/`.
-`PCHAT_TOKEN` puts the page behind a secret link, `PORT` picks the port,
-`PCHAT_MODEL` and `PCHAT_PROVIDER` the model (default
-`openai/gpt-6.1-sol` on `openrouter`).
+`npm i -g @earendil-works/pi-coding-agent`). The chats live under
+`./workspace` (`PCHAT_WORKSPACE`), one folder each. `PCHAT_TOKEN` puts
+the page behind a secret link, `PORT` picks the port, `PCHAT_MODEL` and
+`PCHAT_PROVIDER` the model (default `openai/gpt-6.1-sol` on
+`openrouter`).
+
+### The chats
+
+A chat's folder is its world. `workspace/chats/<id>/` is the working
+directory of the chat's pi process, and everything of the chat is in
+it, nothing of any other chat:
+
+```
+workspace/
+  bin/                  the scripts (bin/new, bin/render, bin/music, ...)
+  .pchat/               the templates, the lib the scripts load, the connection tests
+  .pi/mcp.json          the connections, read by pi when a chat's process starts
+  chats/<id>/           one per chat: pi's working directory
+    artifacts/          what the agent makes, shown beside the chat
+    uploads/            the pictures and clips the person attached
+    tmp/                TMPDIR of the agent and its tools
+    .session/           pi's session file, the history of the chat
+    .chat.edn           the name the person gave the chat, its task
+    .hook.edn .runs.edn .shares.edn   the webhook, its runs, the share links
+    hook.clj hook.log   the webhook's script and its log
+    bin .pchat .pi      links to the shared ones above
+```
+
+The shared parts are read through the links, so `bin/new`, the
+templates and the connections are the same in every chat, and a
+connection added in the settings reaches them all; nothing of a chat is
+written outside its folder. The agent is told that the folder is its
+own and the rest is not its concern; a reference picture it gets is a
+design to rebuild, not material to crop (`resources/pchat/prompts/system.md`).
+The artifacts pane shows the chat's own folder only. Deleting a chat
+deletes its folder.
+
+The id of a chat is a UUID version 7 (`pchat.chats/new-id`, the time
+first, so the folders sort by age): the name of its folder, the id of
+its pi session, and the id in its URL. Every chat has a page,
+`/chat/<id>`; `/` opens the newest chat and the browser puts the chat's
+address in the bar. A click in the sidebar changes the address without a
+reload and tells the server which chat this tab shows now (`:chat/show`
+with the tab's id, see `pchat.client`); the back button works; a second
+tab shows whatever its own URL names, and two tabs can show two chats.
+The address of a chat that is gone falls back to the newest one with a
+note. The files of a chat are served under its page,
+`/chat/<id>/artifacts/...` and `/chat/<id>/uploads/...`; the agent names
+them as it sees them (`/artifacts/card/music.mp3` in a hiccup block)
+and the page rewrites them (`pchat.genui`).
+
+Chats from before 0.2.0, when all of them shared the workspace folder,
+are offered back by a banner at the top of the page: "Chats from before
+the update found. Bring them back?" runs `bin/migrate-chats`, a
+babashka script in the workspace that is idempotent and never deletes:
+every old session file becomes a chat with the file moved into its
+`.session/` (pi resumes it), the pictures of the session go into its
+`uploads/`, the artifacts stamped for the chat in
+`.pchat/artifact-owners.edn` move into its `artifacts/` and every
+unstamped artifact into one chat named "Earlier artifacts"; names,
+tasks, webhooks and share links follow. The old folders stay, empty,
+and `.pchat/migrated-at` marks the run; the banner says how many chats
+came back. By hand: `bb bin/migrate-chats` in the workspace.
 
 The page is in English or German: the language of the browser picks
 (`Accept-Language`), `?lang=de` or `?lang=en` on the page URL overrides
@@ -76,7 +136,7 @@ language is one more file.
 
 ### Videos
 
-`bin/render <name>` in the workspace turns an artifact project into
+`bin/render <name>` in the chat's folder turns an artifact project into
 `artifacts/<name>.mp4`, which shows up beside the chat like any video.
 A motion design renders through `fnmotion.render`: every frame as HTML,
 a headless Chrome screenshots them one after the other at the `size` of
@@ -124,7 +184,7 @@ A link can make the pick, for a button elsewhere (on Storrito, "a short
 from a clip"): `/task/<skill>` opens a chat for that skill without the
 picker, `/task/free` a free one. With the token it is
 `/task/<skill>?token=…`; the path survives the redirect that sets the
-cookie, a query would not. The current chat is taken while nothing has
+cookie, a query would not. The newest chat is taken while nothing has
 happened in it, so the same link twice gives one chat; an unknown skill
 shows the picker.
 
@@ -170,19 +230,19 @@ one answer of the model for a small judgment inside a script.
 A chat has a webhook: the Webhook button in the header turns it on and
 shows the address, `/hook/<chat-id>/<secret>`, outside the token, to
 paste into the service that should call it (Zapier, a form, a
-calendar). A call runs `hooks/<chat-id>.clj` in the workspace with the
+calendar). A call runs `hook.clj` in the chat's folder with the
 body of the request on standard input, `PCHAT_HOOK_METHOD`,
 `PCHAT_HOOK_QUERY` and `PCHAT_HOOK_CONTENT_TYPE` in the environment,
 one run at a time per chat; the answer carries what the script
 printed when it is done within twenty-five seconds, else word that it
 goes on. Every run is a row under the chat with its output and the
-artifacts it made, and a block in `hooks/<chat-id>.log` for the agent,
-with the body the call brought. The agent knows the path of its
-chat's script from its prompt and writes it when the person wants
+artifacts it made, and a block in `hook.log` beside the script for the
+agent, with the body the call brought. The agent knows the script
+from its prompt and writes it when the person wants
 something to happen by itself: plain babashka, the same scripts as the
 agent, `bin/ask` for a small judgment of the model. Turning the
 webhook off ends the address and keeps the script; deleting the chat
-deletes both (`pchat.hooks`).
+deletes its folder with both (`pchat.hooks`).
 
 ### Sharing
 
@@ -210,19 +270,22 @@ service and shows the chat: the agent reads the service's documentation, asks fo
 when one is needed, and sets it up with `bin/mcp add`, `bin/mcp test`,
 `bin/mcp list` and `bin/mcp remove`, the script that edits the same
 file through `.pchat/lib/pchat/mcp.clj`. The file is pi's
-`.pi/mcp.json` in the workspace (mode 600), the results of the tests
-`.pchat/connections.edn`. pi reads the file when a chat's process
+`.pi/mcp.json` in the workspace (mode 600), linked from every chat's
+folder, the results of the tests `.pchat/connections.edn`. pi reads
+the file when a chat's process
 starts, so after a change the idle processes end and the working ones
 when they settle; the next message starts each again on its session
 with the new tools (`pchat.mcp`).
 
 ### Housekeeping
 
-A chat's name is a field in the header; Delete asks once. The pi
-process of a chat that idles for fifteen minutes is ended and starts
-again on the next message, on the same session; an artifact project
-runs while it is on screen or changed in the last ten minutes, and is
-stopped after fifteen idle minutes.
+A chat's name is a field in the header; Delete asks once and deletes
+the chat's folder. The pi process of a chat that idles for fifteen
+minutes is ended and starts again on the next message, on the same
+session; an artifact project runs while it is on screen in a tab
+someone looks at or changed in the last ten minutes, and is stopped
+after fifteen idle minutes. The artifacts folders of the chats on
+screen, working or rendering are watched twice a second.
 
 ### On a sprite
 
@@ -348,5 +411,14 @@ script the agent wrote, its runs under the chat (`pchat.hooks`,
 `bin/ask`); `bin/image` and `bin/voice` beside `bin/music`; Stop
 while a video renders; Share for a file; `bb smoke` runs the agent
 once for real and checks the video that came out.
+
+Chats in folders of their own, 0.2.0, 2026-10-14: one folder per chat
+under `workspace/chats/`, pi's working directory with the chat's
+artifacts, uploads, temporary files and session; shared scripts,
+templates and connections through links; URL per chat, `/chat/<id>`,
+the chat a tab shows kept by the tab; UUID version 7 ids;
+`bin/migrate-chats` and a banner for the chats from before, see "The
+chats". The REPL experiment of 0.1.13 is gone: the isolated folder is
+what it was testing for.
 
 Next: the first customer automation as a chat.

@@ -5,7 +5,7 @@
  :page/view-made "Was wir gemacht haben"
 
  :chat/new "Neuer Chat"
- :chat/new-repl "Design am REPL (Experiment)"
+ :chat/missing "Diesen Chat gibt es nicht; das hier ist der neueste."
  :chat/untitled "Neuer Chat"
  :chat/working "Arbeitet"
  :chat/ready "Bereit"
@@ -36,13 +36,6 @@
  :tool/search "Nach einem Werkzeug gesucht"
  :tool/eval "Ausgewertet"
  :tool/connection [:fn/str "{{:tool}} von {{:connection}} benutzt"]
- :repl/label "Deine Kreation"
- :repl/placeholder "Deine Kreation erscheint hier, mit Reglern zum Ausprobieren."
- :repl/code "Der Code deiner Kreation"
- :repl/play "Abspielen"
- :repl/pause "Pause"
- :repl/view-failed [:fn/str "Die Ansicht ist fehlgeschlagen: {{:error}}"]
- :repl/frame-failed [:fn/str "Das Bild ist fehlgeschlagen: {{:error}}"]
  :tool/running " …"
  :tool/failed " · hat nicht geklappt"
 
@@ -65,8 +58,6 @@
  :artifacts/render "Video erstellen"
  :artifacts/rendering [:fn/str "Video wird erstellt {{:progress}}"]
  :artifacts/render-stop "Stopp"
- :artifacts/others "Aus anderen Chats"
- :artifacts/unowned "Sonstiges"
  :artifacts/render-failed [:fn/str "Das Video ist nicht gelungen: {{:error}}"]
  :artifacts/creation "Dein Werk"
  :artifacts/empty "Was der Agent für dich macht, erscheint hier."
@@ -149,11 +140,21 @@
  :updates/newest "Das ist die neueste Version."
  :updates/lookup-failed "Die Suche ist fehlgeschlagen; versuche es gleich noch einmal."
 
+ :migrate/found "Chats von vor dem Update gefunden. Zurückholen?"
+ :migrate/start "Zurückholen"
+ :migrate/running [:fn/str "Die Chats werden zurückgeholt … {{:progress}}"]
+ :migrate/done [:fn/str "{{:count}} Chats zurückgeholt."]
+ :migrate/close "Schließen"
+ :migrate/failed [:fn/str "Das Zurückholen ist fehlgeschlagen: {{:error}}"]
+ :migrate/retry "Noch einmal versuchen"
+
  :command/nothing-to-send "Nichts zu senden."
  :command/no-such-chat "Diesen Chat gibt es nicht."
+ :command/no-such-tab "Diese Seite hat keine Tab-Kennung."
  :command/no-such-artifact "Dieses Artefakt gibt es nicht."
  :command/no-such-task "Diese Aufgabe gibt es nicht."
  :command/task-fixed "Dieser Chat hat schon begonnen, seine Aufgabe bleibt. Starte für eine andere einen neuen Chat."
 
  :upload/attached-video [:fn/str "(Angehängtes Video: {{:path}})"]
- :upload/attached-audio [:fn/str "(Angehängtes Audio: {{:path}})"]}
+ :upload/attached-audio [:fn/str "(Angehängtes Audio: {{:path}})"]
+ :upload/attached-image [:fn/str "(Angehängtes Bild: {{:path}})"]}

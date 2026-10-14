@@ -11,13 +11,13 @@
         (make-array java.nio.file.attribute.FileAttribute 0))))
 
 (deftest hooks-test
-  (let [dir (temp-dir)
+  (let [chats (temp-dir)
         id "11111111-2222-3333-4444-555555555555"
+        dir (io/file chats id)
         db (atom {:chats {id {:id id}}})
         handle (hooks/handle {:db db
-                              :workspace dir
-                              :bb "bb"
-                              :artifacts (io/file dir "artifacts")})]
+                              :chats-dir chats
+                              :bb "bb"})]
     (.mkdirs (io/file dir "artifacts"))
     (hooks/load! handle)
     (is (nil? (get-in @db [:chats id :hook])))
@@ -26,6 +26,7 @@
       (let [{:keys [secret]} (hooks/create! handle id)]
         (is (re-matches #"[0-9a-f]{32}" secret))
         (is (.isFile (hooks/script-file handle id)))
+        (is (= (io/file dir "hook.clj") (hooks/script-file handle id)) "in the chat's folder")
         (is (= secret (get-in @db [:chats id :hook :secret])))
         (testing "a call runs the script with the body, the run is kept and logged"
           (let [request {:request-method :post
@@ -62,20 +63,21 @@
             (is (= 3 (:exit run)))
             (is (= "GET" (:method run)))
             (is (= "boom\n" (:output run)))))
-        (testing "what the script writes under artifacts/ is what the run made"
+        (testing "what the script writes under the chat's artifacts/ is what the run made"
           (spit (hooks/script-file handle id) "(spit \"artifacts/made.txt\" \"x\")")
           (hooks/handler handle {:ring/request {:request-method :post}
                                  :ring/route-params {:* (str id "/" secret)}})
-          (is (= ["made.txt"] (:made (last (get-in @db [:chats id :runs]))))))
+          (is (= ["made.txt"] (:made (last (get-in @db [:chats id :runs])))))
+          (is (.isFile (io/file dir "artifacts" "made.txt")) "the script ran in the chat's folder"))
         (testing "off: the address is gone, the script stays"
           (hooks/remove! handle id)
           (is (nil? (get-in @db [:chats id :hook])))
           (is (.isFile (hooks/script-file handle id)))
           (is (= 404 (:status (:ring/response (hooks/handler handle {:ring/request {:request-method :post}
-                                                                     :ring/route-params {:* (str id "/" secret)}}))))))
-        (testing "forgotten with the chat"
-          (hooks/forget! handle id)
-          (is (not (.exists (hooks/script-file handle id))))
-          (is (nil? (get-in @db [:chats id :runs]))))))
+                                                                     :ring/route-params {:* (str id "/" secret)}})))))
+          (let [db3 (atom {:chats {id {:id id}}})]
+            (hooks/load! (assoc handle :db db3))
+            (is (nil? (get-in @db3 [:chats id :hook])) "off after a restart too")
+            (is (= 3 (count (get-in @db3 [:chats id :runs]))))))))
     (is (= "https://x/hook/a/b" (hooks/url "https://x" "a" "b")))
-    (is (str/includes? (hooks/prompt id) (str "hooks/" id ".clj")))))
+    (is (str/includes? (hooks/prompt) "hook.clj"))))

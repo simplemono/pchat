@@ -2,35 +2,38 @@
   "The server: many chats, one pi process each, the page over rframes.
 
       PORT             default 8080
-      PCHAT_WORKSPACE  the folder the agent works in, default ./workspace
+      PCHAT_WORKSPACE  the folder of the chats, default ./workspace
       PCHAT_PROVIDER   default openrouter (OPENROUTER_API_KEY in the environment)
       PCHAT_MODEL      default openai/gpt-6.1-sol
       PCHAT_TOKEN      a secret: the page is behind the link that sets the cookie
       PCHAT_AGENTITOS  an agentitos checkout: its skills are the tasks a chat can be for
       BB               the babashka executable for the artifact projects, default bb
 
-  The app value: {:chats {id chat} :current id :skills [skill]}. A chat
-  is the value of `pchat.chat` plus :id, :name, :task (the name of its
-  skill, :free, or nil while the person has not picked one), :created,
-  :updated, :file and :loaded?;
-  the list comes from pi's session files, the history of a chat is read
-  from its file when it is opened."
-  (:require [babashka.fs :as fs]
-            [babashka.nrepl.server :as nrepl-server]
-            [clojure.edn :as edn]
+  The app value: {:chats {id chat} :tabs {tabid id} :skills [skill]}. A
+  chat is the value of `pchat.chat` plus :id, :name, :task (the name of
+  its skill, :free, or nil while the person has not picked one),
+  :created, :updated, :file and :loaded?, and what the other namespaces
+  keep in a chat: its artifacts, projects, renders, shares, hook and
+  runs. Every chat works in its own folder (`pchat.chats`); the list
+  comes from the folders, the history of a chat from its pi session
+  file when it is first shown. Which chat a browser tab shows is the
+  tab's: its URL, `/chat/<id>`, until a click in the sidebar names
+  another (`:tabs`)."
+  (:require [babashka.nrepl.server :as nrepl-server]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [org.httpkit.server :as server]
             [pchat.artifacts :as artifacts]
             [pchat.chat :as chat]
+            [pchat.chats :as chats]
             [pchat.hooks :as hooks]
             [pchat.i18n :as i18n]
             [pchat.looks :as looks]
             [pchat.mcp :as mcp]
+            [pchat.migrate :as migrate]
             [pchat.pi :as pi]
             [pchat.projects :as projects]
             [pchat.render :as render]
-            [pchat.repl :as repl]
             [pchat.session :as session]
             [pchat.setup :as setup]
             [pchat.update :as update]
@@ -50,8 +53,11 @@
   ;; relative paths against their own directory.
   (.getAbsoluteFile (io/file (or (System/getenv "PCHAT_WORKSPACE") "./workspace"))))
 
-(def sessions-dir
-  (io/file workspace ".pchat" "sessions"))
+(def chats-dir
+  (io/file workspace "chats"))
+
+(def bb
+  (or (System/getenv "BB") "bb"))
 
 (def provider
   (or (System/getenv "PCHAT_PROVIDER") "openrouter"))
@@ -65,49 +71,56 @@
 
 (defonce db
   (atom {:chats {}
-         :current nil}))
+         :tabs {}}))
 
 ;; The pi process handles are not values, so they live beside the db,
 ;; one per chat id.
 (defonce pis
   (atom {}))
 
+;; Which chat each browser tab showed last and when: the view notes it
+;; at every frame. Beside the db, so that a frame changes nothing that
+;; would make another frame.
+(defonce tab-views
+  (atom {}))
+
+(defn- now
+  []
+  (System/currentTimeMillis))
+
+(def shown-ms
+  "A tab that got a frame this recently looks at its chat: its
+  artifacts are watched and its project on screen runs."
+  (* 2 60 1000))
+
+(defn- shown-chats
+  "The chats someone looks at right now."
+  []
+  (let [since (- (now) shown-ms)]
+    (into #{}
+          (keep (fn [[_ {:keys [chat seen]}]]
+                  (when (< since seen)
+                    chat)))
+          @tab-views)))
+
 (def artifacts
   (artifacts/handle {:db db
-                     :dir (io/file workspace "artifacts")
-                     :owners-file (io/file workspace ".pchat" "artifact-owners.edn")}))
-
-(def looks-dir
-  (io/file workspace ".pchat" "looks"))
-
-(def uploads-dir
-  "The clips the person attaches, where the agent finds them:
-  `uploads/<name>` in its working directory."
-  (io/file workspace "uploads"))
-
-(def repl
-  "The chats at the REPL, an experiment: see `pchat.repl`. A change of a
-  chat's state touches the chat in the db, which pushes a frame."
-  (repl/handle {:db db
-                :dir (io/file workspace ".pchat" "repl")
-                :looks-dir looks-dir
-                :model (str provider "/" model)
-                :on-change (fn [id]
-                             (swap! db assoc-in [:chats id :updated] (System/currentTimeMillis)))}))
+                     :chats-dir chats-dir}))
 
 (def projects
   (projects/handle {:db db
-                    :dir (io/file workspace "artifacts")
-                    :bb (or (System/getenv "BB") "bb")}))
+                    :chats-dir chats-dir
+                    :bb bb
+                    :shown? (fn [id] (contains? (shown-chats) id))}))
 
 (def renders
   (render/handle {:db db
-                  :workspace workspace
-                  :bb (or (System/getenv "BB") "bb")
+                  :chats-dir chats-dir
+                  :bb bb
                   :env (tools/env)
                   ;; The finished video is news now, the poll alone would
                   ;; not notice: the file stopped changing before.
-                  :on-finish (fn [_name] (artifacts/refollow! artifacts))}))
+                  :on-finish (fn [id _name] (artifacts/refollow! artifacts id))}))
 
 (defn- idle?
   "No chat works and no video renders: the moment the process may end."
@@ -126,15 +139,13 @@
 
 (def hooks
   (hooks/handle {:db db
-                 :workspace workspace
-                 :bb (or (System/getenv "BB") "bb")
-                 :env (tools/env)
-                 :artifacts (io/file workspace "artifacts")}))
+                 :chats-dir chats-dir
+                 :bb bb
+                 :env (tools/env)}))
 
 (def shares
   (share/handle {:db db
-                 :dir (io/file workspace "artifacts")
-                 :file (io/file workspace ".pchat" "shares.edn")}))
+                 :chats-dir chats-dir}))
 
 (declare restart-pis!)
 
@@ -143,9 +154,18 @@
                :workspace workspace
                :on-change (fn [] (restart-pis!))}))
 
+(declare load-chats!)
+
+(def migration
+  (migrate/handle {:db db
+                   :workspace workspace
+                   :bb bb
+                   :on-done (fn [] (load-chats!))}))
+
 (def template-files
   "The project templates and the scripts, copied into the workspace at
-  start: .pchat/template/motion/, .pchat/template/hyperframes/ and bin/."
+  start: .pchat/template/motion/, .pchat/template/hyperframes/ and bin/.
+  Every chat's folder links to them."
   ["template/motion/bb.edn"
    "template/motion/design.edn"
    "template/motion/README.md"
@@ -161,12 +181,15 @@
    "bin/image"
    "bin/voice"
    "bin/ask"
-   "bin/mcp"])
+   "bin/mcp"
+   "bin/migrate-chats"])
 
 (def lib-files
   "Namespaces of pchat the scripts load from .pchat/lib: `bin/mcp` edits
-  the connections with the same code as the page."
-  ["mcp.clj"])
+  the connections with the same code as the page, `bin/migrate-chats`
+  makes chat folders the way the page does."
+  ["mcp.clj"
+   "chats.clj"])
 
 (def retired-files
   "Scripts earlier builds installed that are gone: the kinetic engine is a
@@ -206,43 +229,12 @@
       (recur))))
 
 (defn- intern-message
-  [message]
-  (looks/intern-message looks-dir message))
-
-(defn- now
-  []
-  (System/currentTimeMillis))
-
-(def names-file
-  "The names people gave their chats, {id name}; a chat without one is
-  named after its first message."
-  (io/file workspace ".pchat" "names.edn"))
-
-(defn- read-names
-  []
-  (if (.isFile names-file)
-    (edn/read-string (slurp names-file))
-    {}))
-
-(defn- write-names!
-  [names]
-  (io/make-parents names-file)
-  (spit names-file (pr-str names)))
-
-(def tasks-file
-  "The task each chat was started for, {id skill-name-or-:free}."
-  (io/file workspace ".pchat" "tasks.edn"))
-
-(defn- read-tasks
-  []
-  (if (.isFile tasks-file)
-    (edn/read-string (slurp tasks-file))
-    {}))
-
-(defn- write-tasks!
-  [tasks]
-  (io/make-parents tasks-file)
-  (spit tasks-file (pr-str tasks)))
+  "A pi message of the chat with its pictures as files in the chat's
+  uploads folder."
+  [id message]
+  (looks/intern-message (chats/uploads-dir chats-dir id)
+                        (str (chats/url id) "/uploads")
+                        message))
 
 (defn new-chat
   [id]
@@ -252,66 +244,58 @@
           :updated (now)
           :loaded? true}))
 
-(defn- load-chats!
-  "The chats of the session files into the db, without their items, and
-  a fresh chat as the current one when there is none."
-  []
-  (let [names (read-names)
-        tasks (read-tasks)
-        summaries (map (fn [{:keys [id] :as summary}]
-                         (cond-> summary
-                           (get names id) (assoc :name (get names id))
-                           (get tasks id) (assoc :task (get tasks id))))
-                       (map session/summary (session/files sessions-dir)))]
-    (swap! db (fn [db]
-                (let [chats (into (:chats db)
-                                  (for [{:keys [id] :as summary} summaries
-                                        :when (not (get-in db [:chats id :loaded?]))]
-                                    [id (merge chat/empty-chat summary)]))
-                      current (or (:current db)
-                                  (:id (first summaries)))]
-                  (assoc db :chats chats :current current))))
-    (when-not (:current @db)
-      (let [id (str (random-uuid))]
-        (swap! db #(-> % (assoc-in [:chats id] (new-chat id)) (assoc :current id)))))))
-
-(defn- repl?
+(defn- chat-summary
+  "What the sidebar needs of a chat, from its folder: its session file
+  when it has one, the name and the task the person gave it."
   [id]
-  (= :repl (get-in @db [:chats id :mode])))
+  (let [{:keys [name task]} (chats/meta chats-dir id)
+        file (first (session/files (chats/session-dir chats-dir id)))
+        made (.lastModified (chats/dir chats-dir id))]
+    (-> (merge chat/empty-chat
+               {:created made
+                :updated made}
+               (when file
+                 (session/summary file))
+               (when name {:name name})
+               (when task {:task task}))
+        (assoc :id id))))
 
-(defn- load-repl-chats!
-  "The chats at the REPL, from their directories (they have no session
-  file): named as the person named them, dated by their log."
+(defn- new!
+  "A fresh chat with its folder; the id."
   []
-  (let [names (read-names)]
+  (let [id (chats/new-id)]
+    (chats/create! workspace id)
+    (swap! db (fn [db]
+                (-> db
+                    (assoc-in [:chats id] (new-chat id))
+                    (dissoc :deleting :hook-open :settings-open))))
+    id))
+
+(defn- load-chats!
+  "The chats of the folders into the db, without their items; the ones
+  already loaded stay as they are, the ones whose folder went go. A
+  fresh chat when there is none."
+  []
+  (let [ids (chats/ids chats-dir)]
     (swap! db update :chats
            (fn [chats]
-             (into chats
-                   (for [id (repl/chat-ids repl)
-                         :when (not (get chats id))
-                         :let [file (repl/log-file repl id)
-                               at (if (.isFile file) (.lastModified file) (now))]]
-                     [id (merge chat/empty-chat
-                                {:id id
-                                 :mode :repl
-                                 :created at
-                                 :updated at
-                                 :loaded? true}
-                                (when (get names id) {:name (get names id)}))]))))))
+             (into (select-keys chats ids)
+                   (for [id ids
+                         :when (not (get-in chats [id :loaded?]))]
+                     [id (chat-summary id)]))))
+    (hooks/load! hooks)
+    (share/load! shares)
+    (when (empty? (:chats @db))
+      (new!))))
 
-(defn- open!
-  "Makes the chat current, its history read from the session file the
-  first time; the name the person gave it stays. A chat at the REPL
-  takes the `user` namespace (`pchat.repl/activate!`)."
+(defn- ensure-loaded!
+  "The history of the chat from its session file, the first time it is
+  shown; the name the person gave it stays."
   [id]
-  (swap! db (fn [db]
-              (let [{:keys [loaded? file name]} (get-in db [:chats id])]
-                (cond-> (assoc db :current id)
-                  (and (not loaded?) file)
-                  (update-in [:chats id] merge (session/load-chat (io/file file) intern-message)
-                             (when (get (read-names) id) {:name name}))))))
-  (when (repl? id)
-    (repl/activate! repl id)))
+  (let [{:keys [loaded? file]} (get-in @db [:chats id])]
+    (when (and (not loaded?) file)
+      (let [loaded (session/load-chat (io/file file) #(intern-message id %))]
+        (swap! db update-in [:chats id] merge (dissoc loaded :name) {:loaded? true})))))
 
 (defn- on-event
   [id event]
@@ -320,18 +304,17 @@
     (swap! pis (fn [pis] (if (some-> (get pis id) pi/alive?) pis (dissoc pis id))))
     (swap! pis update id #(some-> % (assoc :last-event (now)))))
   (let [event (cond-> event
-                (:message event) (update :message intern-message))]
+                (:message event) (update :message #(intern-message id %)))]
     (swap! db (fn [db]
-                (-> db
-                    (update-in [:chats id] chat/event event)
-                    (assoc-in [:chats id :updated] (now))))))
-  ;; A tool starts: what it names is this chat's once it appears.
-  (when (= "tool_execution_start" (:type event))
-    (artifacts/hint! artifacts id {:name (:toolName event) :args (:args event)}))
+                (if (get-in db [:chats id])
+                  (-> db
+                      (update-in [:chats id] chat/event event)
+                      (assoc-in [:chats id :updated] (now)))
+                  db))))
   ;; A tool just ran: what it wrote is on screen right away, the poll
   ;; catches the rest.
   (when (#{"tool_execution_end" "agent_settled"} (:type event))
-    (artifacts/refresh! artifacts))
+    (artifacts/refresh! artifacts id))
   ;; The connections changed while the agent worked: its process ends
   ;; now that it is done, the next message starts one that has them.
   (when (and (= "agent_settled" (:type event))
@@ -367,25 +350,59 @@
             (println "[connections]" (str e)))))
       (recur))))
 
+(defn- rendering-chats
+  "The chats with a video on its way."
+  []
+  (for [[id {:keys [renders]}] (:chats @db)
+        :when (some (fn [[_ render]] (and (:started render) (nil? (:exit render)))) renders)]
+    id))
+
+(defn- watched-chats
+  "The chats whose artifacts folders are looked at: shown in a tab,
+  working, or rendering."
+  []
+  (into (shown-chats)
+        (concat (for [[id {:keys [status]}] (:chats @db)
+                      :when (= :working status)]
+                  id)
+                (rendering-chats))))
+
+(defn- prune-tabs!
+  "The tabs the db remembers a chat for, less the ones gone for an
+  hour."
+  []
+  (let [since (- (now) (* 60 60 1000))
+        gone (for [[tab _] (:tabs @db)
+                   :when (< (get-in @tab-views [tab :seen] 0) since)]
+               tab)]
+    (when (seq gone)
+      (swap! db update :tabs #(apply dissoc % gone)))))
+
 (defn- poll-artifacts!
-  "Looks at the artifacts folder twice a second: the agent writes with
-  tools, but a command can write files too."
+  "Looks at the artifacts folders of the chats someone watches twice a
+  second: the agent writes with tools, but a command can write files
+  too. Once a minute a tick in the db makes a frame for every tab, so
+  that a quiet tab stays known as one that looks."
   []
   (future
-    (loop []
+    (loop [n 0]
       (Thread/sleep 500)
       (try
-        (artifacts/refresh! artifacts)
+        (doseq [id (watched-chats)]
+          (artifacts/refresh! artifacts id))
+        (when (zero? (mod n 120))
+          (prune-tabs!)
+          (swap! db assoc :tick (quot (now) 60000)))
         (catch Exception e
           (binding [*out* *err*]
             (println "[artifacts]" (str e)))))
-      (recur))))
+      (recur (inc n)))))
 
 (defn- system-prompt
   "system.md, the skills paragraph (the chat's task in full, see
   `pchat.skills/prompt`), the integrations paragraph when a connection
   with Composio's connection tools exists (a Storrito agent's own), and
-  the chat's webhook paragraph."
+  the webhook paragraph."
   [id]
   (str (slurp (io/resource "pchat/prompts/system.md"))
        (some->> (skills/prompt (:skills @db) (get-in @db [:chats id :task]))
@@ -393,20 +410,28 @@
        (when-let [names (seq (mcp/composio-connections connections))]
          (str "\n\n" (str/replace (slurp (io/resource "pchat/prompts/integrations.md"))
                                   "<connection>" (str/join ", " names))))
-       "\n\n" (hooks/prompt id)))
+       "\n\n" (hooks/prompt)))
+
+(defn- chat-env
+  "The environment of a chat's processes: the tools, the shared scripts
+  on the PATH, the chat's own folder for temporary files."
+  [id]
+  (assoc (tools/env)
+         "PATH" (str (.getPath (io/file workspace "bin")) ":" (System/getenv "PATH"))
+         "TMPDIR" (str (chats/tmp-dir chats-dir id))))
 
 (defn- ensure-pi!
   [id]
   (or (get @pis id)
       (let [{:keys [skills]} @db
-            handle (pi/spawn! {:dir workspace
-                               :session-dir sessions-dir
+            handle (pi/spawn! {:dir (chats/dir chats-dir id)
+                               :session-dir (chats/session-dir chats-dir id)
                                :session-id id
                                :provider provider
                                :model model
                                :system-prompt (system-prompt id)
                                :skills (skills/paths skills)
-                               :env (tools/env)
+                               :env (chat-env id)
                                :on-event #(on-event id %)})]
         (swap! pis assoc id (assoc handle :last-event (now)))
         handle)))
@@ -438,10 +463,9 @@
   (i18n/translate text (i18n/locale (:ring/request w))))
 
 (defn- send!
-  "The text and the images to the current chat's agent."
-  [text images]
-  (let [id (:current @db)
-        p (ensure-pi! id)
+  "The text and the images to the chat's agent."
+  [id text images]
+  (let [p (ensure-pi! id)
         streaming? (= :working (get-in @db [:chats id :status]))]
     (pi/prompt! p text streaming? images)))
 
@@ -449,9 +473,8 @@
   "The message of a chat whose agent is not there yet: kept in the
   chat with the answer that says so, nothing is sent. Its clips show as
   in a sent message."
-  [text image-urls message]
-  (let [id (:current @db)
-        [user note] (setup/refusal-items text image-urls message)
+  [id text image-urls message]
+  (let [[user note] (setup/refusal-items text image-urls message)
         user (assoc user
                     :text (uploads/without-lines text)
                     :media (uploads/attachments text))]
@@ -460,81 +483,87 @@
                     (update-in [:chats id :items] into [user note])
                     (assoc-in [:chats id :updated] (now)))))))
 
-(defn- clip-lines
-  "A line for each attached clip that is in the uploads folder, naming
-  its path in the workspace, in the language of the page:
-  \"(Attached video: uploads/ab12.mp4)\"."
-  [w names]
+(defn- attachment-lines
+  "A line for each attached file that is in the chat's uploads folder,
+  naming its path there, in the language of the page: \"(Attached
+  video: uploads/ab12.mp4)\". A picture goes to the model as an image
+  as well; the line tells the agent where the file is."
+  [w id names]
   (for [name names
-        :let [kind (uploads/kind name)]
+        :let [kind (or (uploads/kind name)
+                       (when (re-find #"\.(png|jpe?g|webp|gif)$" (str name)) :image))]
         :when (and kind
                    (re-matches #"[A-Za-z0-9]+\.[a-z0-9]+" (str name))
-                   (.isFile (io/file uploads-dir (str name))))]
+                   (.isFile (io/file (chats/uploads-dir chats-dir id) (str name))))]
     (let [path (str "uploads/" name)]
-      (say w (if (= :audio kind)
-               [:i18n :upload/attached-audio {:path path}]
-               [:i18n :upload/attached-video {:path path}])))))
+      (say w (case kind
+               :audio [:i18n :upload/attached-audio {:path path}]
+               :video [:i18n :upload/attached-video {:path path}]
+               [:i18n :upload/attached-image {:path path}])))))
 
 (defn- send-command
   [w]
-  (let [{:keys [text images]} (command/command-data w)
+  (let [{:keys [id text images]} (command/command-data w)
         names (when (sequential? images)
                 (keep :name images))
         text (str/trim (str text))
-        clips (clip-lines w names)
-        images (looks/blocks looks-dir (remove uploads/kind names))
+        lines (attachment-lines w id names)
+        images (looks/blocks (chats/uploads-dir chats-dir id) (remove uploads/kind names))
         message (str/trim (cond
-                            (seq clips) (str/join "\n" (cons text clips))
+                            (seq lines) (str/join "\n" (cons text lines))
                             (str/blank? text) "Look at this."
                             :else text))]
     (cond
-      (and (str/blank? text) (empty? images) (empty? clips))
-      (command/rejected w (say w [:i18n :command/nothing-to-send]))
+      (not (get-in @db [:chats id]))
+      (command/rejected w (say w [:i18n :command/no-such-chat]))
 
-      ;; A chat at the REPL: its own agent, no pi (`pchat.repl`).
-      (repl? (:current @db))
-      (do (repl/send! repl (:current @db) message (vec (remove uploads/kind names)))
-          (command/accepted w))
+      (and (str/blank? text) (empty? images) (empty? lines))
+      (command/rejected w (say w [:i18n :command/nothing-to-send]))
 
       ;; pi is still being installed on a fresh machine: the message
       ;; waits in the chat with the reason, see `pchat.setup`.
       (not (setup/ready? (setup/refresh! setup)))
-      (do (keep! message
-                 (map #(str "/looks/" %) (remove uploads/kind names))
+      (do (keep! id
+                 message
+                 (map #(str (chats/url id) "/uploads/" %) (remove uploads/kind names))
                  (setup/not-ready-message (:pi (:setup @db))))
           (command/accepted w))
 
       :else
-      (do (send! message images)
+      (do (send! id message images)
           (command/accepted w)))))
 
 (defn- abort-command
   [w]
-  (if (repl? (:current @db))
-    (repl/stop! repl (:current @db))
-    (when-let [p (get @pis (:current @db))]
-      (pi/abort! p)))
-  (command/accepted w))
+  (let [{:keys [id]} (command/command-data w)]
+    (when-let [p (get @pis id)]
+      (pi/abort! p))
+    (command/accepted w)))
 
-(defn- new!
-  "A fresh chat, the current one, the page back on the chat."
-  []
-  (let [id (str (random-uuid))]
-    (swap! db #(-> % (assoc-in [:chats id] (new-chat id)) (assoc :current id) (dissoc :deleting :hook-open :settings-open)))
-    id))
+(defn- show-command
+  "The tab shows the chat from now on: a click in the sidebar, the
+  back button. Without an id, or with one that is gone, the tab
+  follows its URL again."
+  [w]
+  (let [{:keys [id tab]} (command/command-data w)
+        tab (str tab)]
+    (if (str/blank? tab)
+      (command/rejected w (say w [:i18n :command/no-such-tab]))
+      (do (if (get-in @db [:chats id])
+            (swap! db #(-> % (assoc-in [:tabs tab] id) (dissoc :deleting :hook-open :settings-open)))
+            (swap! db update :tabs dissoc tab))
+          (command/accepted w)))))
 
 (defn- new-command
+  "A fresh chat, shown in the tab that asked for it."
   [w]
-  (new!)
-  (command/accepted w))
-
-(defn- new-repl-command
-  "A fresh chat at the REPL (`pchat.repl`), the current one."
-  [w]
-  (let [id (new!)]
-    (swap! db assoc-in [:chats id :mode] :repl)
-    (repl/ensure! repl id)
-    (command/accepted w)))
+  (let [{:keys [tab]} (command/command-data w)
+        tab (str tab)]
+    (if (str/blank? tab)
+      (command/rejected w (say w [:i18n :command/no-such-tab]))
+      (let [id (new!)]
+        (swap! db assoc-in [:tabs tab] id)
+        (command/accepted w)))))
 
 (defn- known-task
   "The task a name stands for: the name of a skill there is, :free for
@@ -558,11 +587,10 @@
 (defn- set-task!
   "The task of the chat, none again with nil."
   [id task]
+  (chats/update-meta! chats-dir id #(assoc % :task task))
   (if task
-    (do (write-tasks! (assoc (read-tasks) id task))
-        (swap! db assoc-in [:chats id :task] task))
-    (do (write-tasks! (dissoc (read-tasks) id))
-        (swap! db update-in [:chats id] dissoc :task))))
+    (swap! db assoc-in [:chats id :task] task)
+    (swap! db update-in [:chats id] dissoc :task)))
 
 (defn- task-command
   "The task of a new chat: a skill by its name, or :free. Only before
@@ -578,76 +606,63 @@
       :else (do (set-task! id task)
                 (command/accepted w)))))
 
+(defn- newest-chat-id
+  [db]
+  (:id (first (sort-by #(or (:updated %) 0) > (vals (:chats db))))))
+
 (defn- task-link
   "GET /task/<skill> (or /task/free): the way in from elsewhere, e.g. a
   button on Storrito, to a chat for that task without the picker. The
   path survives the redirect of a token link (`/task/<skill>?token=…`),
-  a query would not. The current chat is taken while nothing has
+  a query would not. The newest chat is taken while nothing has
   happened in it, so that opening the link twice gives one chat; else a
   fresh one. An unknown task leaves the choice to the picker. Then on
-  to the page."
+  to the chat's page."
   [w]
   (let [task (known-task (get-in w [:ring/route-params :*]))
-        current (:current @db)
-        id (if (and current (unstarted? current))
+        newest (newest-chat-id @db)
+        id (if (and newest (unstarted? newest))
              (do (swap! db dissoc :deleting :hook-open :settings-open)
-                 current)
+                 newest)
              (new!))]
     (set-task! id task)
     (assoc w :ring/response {:status 302
-                             :headers {"Location" "/"
+                             :headers {"Location" (chats/url id)
                                        "Cache-Control" "no-store"}
                              :body ""})))
-
-(defn- open-command
-  [w]
-  (let [{:keys [id]} (command/command-data w)]
-    (if (get-in @db [:chats id])
-      (do (open! id)
-          (swap! db dissoc :deleting :hook-open :settings-open)
-          (command/accepted w))
-      (command/rejected w (say w [:i18n :command/no-such-chat])))))
 
 (defn- rename-command
   [w]
   (let [{:keys [id name]} (command/command-data w)
         name (str/trim (str name))]
     (if (get-in @db [:chats id])
-      (do (if (str/blank? name)
-            (do (write-names! (dissoc (read-names) id))
-                (swap! db update-in [:chats id] dissoc :name))
-            (do (write-names! (assoc (read-names) id name))
-                (swap! db assoc-in [:chats id :name] name)))
+      (do (chats/update-meta! chats-dir id #(assoc % :name (not-empty name)))
+          (if (str/blank? name)
+            (swap! db update-in [:chats id] dissoc :name)
+            (swap! db assoc-in [:chats id :name] name))
           (command/accepted w))
       (command/rejected w (say w [:i18n :command/no-such-chat])))))
 
 (defn- delete!
-  "The chat is gone: its pi ended, its session file and name deleted,
-  the newest other chat current, a fresh one when there is none."
+  "The chat is gone: its pi ended, its projects and renders stopped,
+  its folder deleted with everything in it; the tabs that showed it
+  follow their URL, which lands on the newest chat; a fresh one when
+  there is none."
   [id]
   (when-let [handle (get @pis id)]
     (pi/kill! handle)
+    (pi/wait! handle 2000)
     (swap! pis dissoc id))
-  (when-let [file (get-in @db [:chats id :file])]
-    (io/delete-file (io/file file) true))
-  (write-names! (dissoc (read-names) id))
-  (write-tasks! (dissoc (read-tasks) id))
-  (hooks/forget! hooks id)
-  (artifacts/forget-chat! artifacts id)
-  (when (repl? id)
-    (repl/delete! repl id))
+  (projects/stop-chat! projects id)
+  (render/stop-chat! renders id)
+  (chats/delete! chats-dir id)
   (swap! db (fn [db]
-              (let [chats (dissoc (:chats db) id)
-                    current (if (= id (:current db))
-                              (:id (first (sort-by #(or (:updated %) 0) > (vals chats))))
-                              (:current db))]
-                (-> db
-                    (assoc :chats chats :current current)
-                    (dissoc :deleting)))))
-  (when-not (:current @db)
-    (let [id (str (random-uuid))]
-      (swap! db #(-> % (assoc-in [:chats id] (new-chat id)) (assoc :current id)))))
-  (open! (:current @db)))
+              (-> db
+                  (update :chats dissoc id)
+                  (update :tabs #(into {} (remove (fn [[_ chat]] (= chat id))) %))
+                  (dissoc :deleting))))
+  (when (empty? (:chats @db))
+    (new!)))
 
 (defn- delete-command
   "The first call arms the deletion, the second deletes."
@@ -663,21 +678,32 @@
   (swap! db dissoc :deleting)
   (command/accepted w))
 
+(defn- artifact-of
+  "The artifact of the chat at the path, or nil."
+  [id path]
+  (some #(when (= path (:path %)) %) (get-in @db [:chats id :artifacts/list])))
+
 (defn- open-artifact-command
   [w]
-  (let [{:keys [path]} (command/command-data w)]
-    (if (some #(= path (:path %)) (:artifacts/list @db))
-      (do (artifacts/pick! artifacts path)
+  (let [{:keys [id path]} (command/command-data w)]
+    (if (artifact-of id path)
+      (do (artifacts/pick! artifacts id path)
           (command/accepted w))
       (command/rejected w (say w [:i18n :command/no-such-artifact])))))
 
 (defn- render-command
   [w]
-  (let [{:keys [path]} (command/command-data w)]
-    (if (some #(and (= path (:path %)) (= :project (:kind %))) (:artifacts/list @db))
-      (do (render/start! renders path)
+  (let [{:keys [id path]} (command/command-data w)]
+    (if (= :project (:kind (artifact-of id path)))
+      (do (render/start! renders id path)
           (command/accepted w))
       (command/rejected w (say w [:i18n :command/no-such-artifact])))))
+
+(defn- render-stop-command
+  [w]
+  (let [{:keys [id path]} (command/command-data w)]
+    (render/stop! renders id path)
+    (command/accepted w)))
 
 (defn- hook-toggle-command
   "The webhook panel of the chat, shown or hidden."
@@ -697,27 +723,24 @@
 (defn- hook-remove-command
   [w]
   (let [{:keys [id]} (command/command-data w)]
-    (hooks/remove! hooks id)
+    (when (get-in @db [:chats id])
+      (hooks/remove! hooks id))
     (command/accepted w)))
 
 (defn- share-command
   [w]
-  (let [{:keys [path]} (command/command-data w)]
-    (if (some #(and (= path (:path %)) (not= :project (:kind %))) (:artifacts/list @db))
-      (do (share/share! shares path)
+  (let [{:keys [id path]} (command/command-data w)
+        artifact (artifact-of id path)]
+    (if (and artifact (not= :project (:kind artifact)))
+      (do (share/share! shares id path)
           (command/accepted w))
       (command/rejected w (say w [:i18n :command/no-such-artifact])))))
 
 (defn- unshare-command
   [w]
-  (let [{:keys [path]} (command/command-data w)]
-    (share/unshare! shares path)
-    (command/accepted w)))
-
-(defn- render-stop-command
-  [w]
-  (let [{:keys [path]} (command/command-data w)]
-    (render/stop! renders path)
+  (let [{:keys [id path]} (command/command-data w)]
+    (when (get-in @db [:chats id])
+      (share/unshare! shares id path))
     (command/accepted w)))
 
 (defn- update-start-command
@@ -733,8 +756,20 @@
   (future (update/check-now! updater))
   (command/accepted w))
 
+(defn- migrate-start-command
+  "The person brings the chats from before 0.2.0 back: see
+  `pchat.migrate`."
+  [w]
+  (migrate/start! migration)
+  (command/accepted w))
+
+(defn- migrate-dismiss-command
+  [w]
+  (migrate/dismiss! migration)
+  (command/accepted w))
+
 (defn- settings-open-command
-  "The settings in place of the chat; the chat stays current."
+  "The settings in place of the chat."
   [w]
   (swap! db #(-> % (assoc :settings-open true) (dissoc :deleting)))
   (command/accepted w))
@@ -812,43 +847,75 @@
 
 (defn- connections-agent-command
   "The person names a service, the agent finds out how it is reached
-  and sets it up: a message to the current chat, a fresh one when there
-  is none, in the person's language; the settings close so that the
-  person sees the agent at work."
+  and sets it up: a message to the chat the tab shows, in the person's
+  language; the settings close so that the person sees the agent at
+  work."
   [w]
-  (let [{:keys [service]} (command/command-data w)
+  (let [{:keys [id service]} (command/command-data w)
         service (str/trim (str service))]
-    (when-not (get-in @db [:chats (:current @db)])
-      (new!))
-    (send! (say w (if (str/blank? service)
-                    [:i18n :connections/agent-message-blank]
-                    [:i18n :connections/agent-message {:service service}]))
-           nil)
-    (swap! db dissoc :settings-open)
-    (command/accepted w)))
+    (if (get-in @db [:chats id])
+      (do (send! id
+                 (say w (if (str/blank? service)
+                          [:i18n :connections/agent-message-blank]
+                          [:i18n :connections/agent-message {:service service}]))
+                 nil)
+          (swap! db dissoc :settings-open)
+          (command/accepted w))
+      (command/rejected w (say w [:i18n :command/no-such-chat])))))
+
+(defn- url-chat-id
+  "The chat id in the path of the page, `/chat/<id>`, or nil."
+  [w]
+  (let [id (first (str/split (str (get-in w [:ring/route-params :*])) #"/"))]
+    (when (chats/valid-id? id)
+      id)))
+
+(defn- shown-chat
+  "The chat a connection shows: the one its tab picked since
+  (`:chat/show`), else the one of its URL; the newest when that one is
+  not there, with the id that was asked for under `:missing`."
+  [db w]
+  (let [wanted (or (get-in db [:tabs (:tabid w)]) (url-chat-id w))]
+    (if (get-in db [:chats wanted])
+      {:id wanted}
+      {:id (newest-chat-id db)
+       :missing wanted})))
 
 (defn page-view
-  "The page in the language of the connection."
+  "The page in the language of the connection, with the chat of the tab."
   [w]
-  (let [value (repl/enrich repl @db)
-        locale (i18n/locale (:ring/request w))
-        base-url (share/base-url (:ring/request w))]
-    (-> (view/page value {:key-missing? key-missing?
-                          :locale locale
-                          :project (fn [{:keys [path]}]
-                                     (assoc (get-in value [:projects path])
-                                            :render (get-in value [:renders path])))
-                          :share (fn [path]
-                                   (some->> (get-in value [:shares path])
-                                            (share/link base-url)))
-                          :hook-url (fn [{:keys [id hook]}]
-                                      (when hook
-                                        (hooks/url base-url id (:secret hook))))})
-        (i18n/translate locale))))
+  (let [{:keys [id missing]} (shown-chat @db w)]
+    (ensure-loaded! id)
+    (when-not (contains? (get-in @db [:chats id]) :artifacts/list)
+      (artifacts/refresh! artifacts id))
+    (when-let [tab (:tabid w)]
+      (swap! tab-views assoc tab {:chat id :seen (now)}))
+    (let [value @db
+          chat (get-in value [:chats id])
+          locale (i18n/locale (:ring/request w))
+          base-url (share/base-url (:ring/request w))]
+      (-> (view/page value {:id id
+                            :note (when missing [:i18n :chat/missing])
+                            :key-missing? key-missing?
+                            :locale locale
+                            :project (fn [{:keys [path]}]
+                                       (assoc (get-in chat [:projects path])
+                                              :render (get-in chat [:renders path])))
+                            :share (fn [path]
+                                     (some->> (get-in chat [:shares path])
+                                              (share/link base-url)))
+                            :hook-url (fn [{:keys [id hook]}]
+                                        (when hook
+                                          (hooks/url base-url id (:secret hook))))})
+          (i18n/translate locale)))))
 
 (def head
   (str "<title>pchat</title>"
        "<link rel=\"icon\" href=\"data:,\">"
+       ;; Relative links in an answer, `artifacts/card.html`, resolve
+       ;; against the chat's page: the `:ui/url` alias of the page
+       ;; (`pchat.client`) points the base at `/chat/<id>/`.
+       "<base href=\"/\">"
        ;; The scheme of the page before the first paint: the person's
        ;; choice from localStorage (`:ui/theme` in pchat.client writes
        ;; it), light without one. The class on <html> is outside
@@ -871,14 +938,96 @@
        "<link rel=\"stylesheet\" href=\"/pchat.css?v=" (update/current-version) "\">"
        "<script defer src=\"/js/main.js?v=" (update/current-version) "\"></script>"))
 
+(def chat-stream
+  "The view stream of a chat's page, POST /chat/<id>: the chat id of
+  the path is in the route params of the connection."
+  (:ring/handler (replicant/expand-entry {:replicant/render "/chat/*"
+                                          :render/fn #'page-view})))
+
+(defn- split-chat-path
+  "`<id>/artifacts/x` of the wildcard into [id \"artifacts/x\"]."
+  [w]
+  (let [[id & rest] (str/split (str (get-in w [:ring/route-params :*])) #"/" 2)]
+    [id (str (first rest))]))
+
+(defn- under
+  "The world with the rest of the path as its wildcard."
+  [w rest prefix]
+  (assoc w :ring/route-params {:* (subs rest (count prefix))}))
+
+(defn- not-found
+  [w]
+  (assoc w :ring/response http/not-found))
+
+(defn- chat-get
+  "GET /chat/<id>: the page; /chat/<id>/artifacts/<path>: a running
+  project's page, else the file; /chat/<id>/uploads/<name>: the file."
+  [w]
+  (let [[id rest] (split-chat-path w)]
+    (cond
+      (not (chats/valid-id? id))
+      (not-found w)
+
+      (str/blank? rest)
+      (assoc w :ring/response {:status 200
+                               :headers {"Content-Type" "text/html; charset=utf-8"
+                                         "Cache-Control" "no-cache"}
+                               :body (replicant/shim-html head)})
+
+      (str/starts-with? rest "artifacts/")
+      (let [w (under w rest "artifacts/")
+            w (projects/handler projects id w)]
+        (if (:ring/response w)
+          w
+          (artifacts/file-handler artifacts id w)))
+
+      (str/starts-with? rest "uploads/")
+      (uploads/file-handler (chats/uploads-dir chats-dir id) (under w rest "uploads/"))
+
+      :else
+      (not-found w))))
+
+(defn- chat-post
+  "POST /chat/<id>: the view stream; /chat/<id>/upload: a file into
+  the chat's folder; /chat/<id>/artifacts/<name>/...: a running
+  project's commands."
+  [w]
+  (let [[id rest] (split-chat-path w)]
+    (cond
+      (not (chats/valid-id? id))
+      (not-found w)
+
+      (str/blank? rest)
+      (chat-stream w)
+
+      (and (= "upload" rest) (get-in @db [:chats id]))
+      (uploads/handler {:dir (chats/uploads-dir chats-dir id)
+                        :url-prefix (str (chats/url id) "/uploads")}
+                       w)
+
+      (str/starts-with? rest "artifacts/")
+      (let [w (projects/handler projects id (under w rest "artifacts/"))]
+        (if (:ring/response w)
+          w
+          (not-found w)))
+
+      :else
+      (not-found w))))
+
 (def register
   [(http/resources "/rchat.css" "pchat/chat.css")
    (http/resources "/pchat.css" "pchat/pchat.css")
    (http/resources "/js/*" "public/js")
+   ;; The page at / shows the newest chat; the browser puts the chat's
+   ;; own address in the bar.
    {:replicant/shim "/"
     :head head}
    {:replicant/render "/"
     :render/fn #'page-view}
+   {:ring/route [:get "/chat/*"]
+    :ring/handler #'chat-get}
+   {:ring/route [:post "/chat/*"]
+    :ring/handler #'chat-post}
    {:ring/route [:get "/task/*"]
     :ring/handler #'task-link}
    {:command/kind :chat/send
@@ -887,16 +1036,18 @@
     :command/fn #'update-start-command}
    {:command/kind :update/check
     :command/fn #'update-check-command}
+   {:command/kind :migrate/start
+    :command/fn #'migrate-start-command}
+   {:command/kind :migrate/dismiss
+    :command/fn #'migrate-dismiss-command}
    {:command/kind :chat/abort
     :command/fn #'abort-command}
+   {:command/kind :chat/show
+    :command/fn #'show-command}
    {:command/kind :chat/new
     :command/fn #'new-command}
-   {:command/kind :chat/new-repl
-    :command/fn #'new-repl-command}
    {:command/kind :chat/task
     :command/fn #'task-command}
-   {:command/kind :chat/open
-    :command/fn #'open-command}
    {:command/kind :chat/rename
     :command/fn #'rename-command}
    {:command/kind :chat/delete
@@ -938,18 +1089,9 @@
 
 (defn get-register
   []
-  ;; The project proxy before the files: it answers only for a running
-  ;; project, the files route takes the rest.
   (replicant/expand (concat register
                             command/register
-                            (setup/register setup)
-                            (projects/register projects)
-                            (artifacts/register artifacts)
-                            (repl/register repl)
-                            (looks/register {:db db
-                                             :looks-dir looks-dir})
-                            (uploads/register {:dir uploads-dir
-                                               :looks-dir looks-dir}))))
+                            (setup/register setup))))
 
 (def open-register
   "The routes outside the token: a share link and a webhook address are
@@ -992,20 +1134,14 @@
   (when (= "--version" (first args))
     (println (update/current-version))
     (System/exit 0))
-  (.mkdirs sessions-dir)
-  (.mkdirs (:dir artifacts))
-  (.mkdirs looks-dir)
-  (.mkdirs uploads-dir)
+  (.mkdirs chats-dir)
+  ;; pi's connections, linked from every chat's folder.
+  (.mkdirs (io/file workspace ".pi"))
   (install-workspace!)
   (swap! db assoc :skills (skills/load-all (skills/checkout)))
-  (share/load! shares)
   (load-chats!)
-  (load-repl-chats!)
-  (hooks/load! hooks)
   (mcp/load! connections)
-  (open! (:current @db))
-  (artifacts/load-owners! artifacts)
-  (artifacts/refresh! artifacts)
+  (migrate/check! migration)
   (poll-artifacts!)
   (sync-projects!)
   (reap-idle-pis!)
@@ -1038,5 +1174,7 @@
                   ", " (tools/report)
                   ", skills: " (if-let [skills (seq (:skills @db))]
                                  (str (str/join " " (map :name skills)) " from " (skills/checkout))
-                                 "none (PCHAT_AGENTITOS)"))))
+                                 "none (PCHAT_AGENTITOS)")
+                  (when (migrate/needed? migration)
+                    ", chats from before 0.2.0 found: bin/migrate-chats or the banner brings them back"))))
   @(promise))

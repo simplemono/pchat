@@ -7,7 +7,7 @@
  :page/view-made "What we made"
 
  :chat/new "New chat"
- :chat/new-repl "Design at the REPL (experiment)"
+ :chat/missing "That chat is not there; this is the newest one."
  :chat/untitled "New chat"
  :chat/working "Working"
  :chat/ready "Ready"
@@ -38,13 +38,6 @@
  :tool/search "Looked for a tool"
  :tool/eval "Evaluated"
  :tool/connection [:fn/str "Used {{:tool}} of {{:connection}}"]
- :repl/label "Your creation"
- :repl/placeholder "Your creation will appear here, with controls to play with it."
- :repl/code "The code of your creation"
- :repl/play "Play"
- :repl/pause "Pause"
- :repl/view-failed [:fn/str "The view failed: {{:error}}"]
- :repl/frame-failed [:fn/str "The frame failed: {{:error}}"]
  :tool/running " …"
  :tool/failed " · did not work"
 
@@ -67,8 +60,6 @@
  :artifacts/render "Make the video"
  :artifacts/rendering [:fn/str "Making the video {{:progress}}"]
  :artifacts/render-stop "Stop"
- :artifacts/others "From other chats"
- :artifacts/unowned "Other"
  :artifacts/render-failed [:fn/str "The video did not come out: {{:error}}"]
  :artifacts/creation "Your creation"
  :artifacts/empty "What the agent makes for you appears here."
@@ -151,11 +142,21 @@
  :updates/newest "This is the newest version."
  :updates/lookup-failed "The lookup failed; try again in a moment."
 
+ :migrate/found "Chats from before the update found. Bring them back?"
+ :migrate/start "Bring them back"
+ :migrate/running [:fn/str "Bringing the chats back … {{:progress}}"]
+ :migrate/done [:fn/str "{{:count}} chats brought back."]
+ :migrate/close "Close"
+ :migrate/failed [:fn/str "Bringing the chats back failed: {{:error}}"]
+ :migrate/retry "Try again"
+
  :command/nothing-to-send "Nothing to send."
  :command/no-such-chat "No such chat."
+ :command/no-such-tab "This page has no tab id."
  :command/no-such-artifact "No such artifact."
  :command/no-such-task "No such task."
  :command/task-fixed "This chat has started; its task stays. Start a new chat for another one."
 
  :upload/attached-video [:fn/str "(Attached video: {{:path}})"]
- :upload/attached-audio [:fn/str "(Attached audio: {{:path}})"]}
+ :upload/attached-audio [:fn/str "(Attached audio: {{:path}})"]
+ :upload/attached-image [:fn/str "(Attached picture: {{:path}})"]}

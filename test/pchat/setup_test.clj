@@ -80,7 +80,7 @@
 
 (deftest appearance-tab-test
   (testing "the Appearance tab names the three schemes for the browser's toggle"
-    (let [view (i18n/translate (view/settings-view {:settings-tab :appearance :connections {}}) :en)
+    (let [view (i18n/translate (view/settings-view {:settings-tab :appearance :connections {}} "a") :en)
           toggle (first (filter #(and (vector? %) (= :ui/theme (first %))) (tree-seq coll? seq view)))
           labels (get-in toggle [1 :ui/labels])]
       (is (= {:system "Like my device" :light "Light" :dark "Dark"} labels))
@@ -89,7 +89,7 @@
     (is (= [:connections :appearance :updates] (mapv :id view/tabs)))))
 
 (deftest updates-tab-test
-  (let [strings (fn [db] (filter string? (tree-seq coll? seq (i18n/translate (view/settings-view (assoc db :settings-tab :updates :connections {})) :en))))]
+  (let [strings (fn [db] (filter string? (tree-seq coll? seq (i18n/translate (view/settings-view (assoc db :settings-tab :updates :connections {}) "a") :en))))]
     (testing "the running version and the button, nothing found yet"
       (let [s (strings {:update {:current "0.1.10"}})]
         (is (some #{"You run pchat 0.1.10."} s))

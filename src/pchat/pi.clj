@@ -102,3 +102,9 @@
 (defn kill!
   [{:keys [process]}]
   (process/destroy-tree process))
+
+(defn wait!
+  "Waits for the process to end, at most `ms`; for a deletion that
+  removes its folder next."
+  [{:keys [process]} ms]
+  (.waitFor (:proc process) (long ms) java.util.concurrent.TimeUnit/MILLISECONDS))

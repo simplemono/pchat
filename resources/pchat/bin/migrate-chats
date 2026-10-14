@@ -1,0 +1,237 @@
+#!/usr/bin/env bb
+;; bin/migrate-chats   brings the chats of this workspace from before pchat
+;; 0.2.0 into the layout since, one folder per chat under chats/
+;; (.pchat/lib/pchat/chats.clj says what is in it). Run in the workspace,
+;; by the banner of the page or by hand. Idempotent: moves and copies,
+;; never deletes; a second run finds nothing left to do. The old places
+;; stay, empty.
+;;
+;;   .pchat/sessions/<t>_<id>.jsonl   -> chats/<id>/.session/, the name kept, so pi resumes
+;;   the pictures in a session         -> chats/<id>/uploads/, named by their content
+;;   uploads/<clip> named in a session -> chats/<id>/uploads/
+;;   .pchat/names.edn, tasks.edn       -> chats/<id>/.chat.edn
+;;   .pchat/hooks.edn, runs/<id>.edn,
+;;   hooks/<id>.clj, hooks/<id>.log    -> chats/<id>/.hook.edn, .runs.edn, hook.clj, hook.log
+;;   artifacts/<x> stamped for a chat
+;;   in .pchat/artifact-owners.edn     -> chats/<id>/artifacts/<x>
+;;   every other artifact              -> the artifacts of one chat "Earlier artifacts"
+;;   .pchat/shares.edn                 -> .shares.edn of the chat that has the file
+;;
+;; The last line says how many chats came back; .pchat/migrated-at is
+;; written at the end.
+(require '[babashka.classpath :refer [add-classpath]]
+         '[babashka.fs :as fs]
+         '[cheshire.core :as json]
+         '[clojure.edn :as edn]
+         '[clojure.string :as str])
+
+(add-classpath ".pchat/lib")
+(require '[pchat.chats :as chats])
+
+(def chats-dir
+  "chats")
+
+(def earlier-name
+  "Earlier artifacts")
+
+(defn read-edn
+  [path default]
+  (if (fs/regular-file? path)
+    (try (edn/read-string (slurp (str path))) (catch Exception _ default))
+    default))
+
+(defn write-edn!
+  [path value]
+  (fs/create-dirs (fs/parent path))
+  (spit (str path) (pr-str value)))
+
+(defn move!
+  "`from` to `to` when `from` exists and `to` does not; says what it did."
+  [from to]
+  (when (fs/exists? from {:nofollow-links true})
+    (fs/create-dirs (fs/parent to))
+    (if (fs/exists? to {:nofollow-links true})
+      (println (str "kept " to ", there already"))
+      (do (fs/move from to)
+          (println (str from " -> " to))))))
+
+(defn copy!
+  [from to]
+  (when (and (fs/exists? from) (not (fs/exists? to)))
+    (fs/create-dirs (fs/parent to))
+    (if (fs/directory? from)
+      (fs/copy-tree from to)
+      (fs/copy from to))
+    (println (str from " => " to))))
+
+(defn session-id
+  [file]
+  (second (re-find #"_([0-9a-f-]{36})\.jsonl$" (fs/file-name file))))
+
+(defn entries
+  [file]
+  (->> (fs/read-all-lines file)
+       (remove str/blank?)
+       (keep #(try (json/parse-string % true) (catch Exception _ nil)))))
+
+(defn user-messages
+  [entries]
+  (for [{:keys [type message]} entries
+        :when (and (= "message" type) (= "user" (:role message)))]
+    message))
+
+(def extensions
+  {"image/png" "png" "image/jpeg" "jpg" "image/webp" "webp" "image/gif" "gif"})
+
+(defn sha256-16
+  "The name a picture gets: the first sixteen bytes of its SHA-256, as
+  the upload names it."
+  [^bytes bytes]
+  (let [digest (.digest (java.security.MessageDigest/getInstance "SHA-256") bytes)]
+    (apply str (map #(format "%02x" (bit-and % 0xff)) (take 16 digest)))))
+
+(defn pictures!
+  "The image blocks of the session's user messages, written into the
+  chat's uploads/ under their content names."
+  [id entries]
+  (doseq [message (user-messages entries)
+          :when (sequential? (:content message))
+          {:keys [type data mimeType]} (:content message)
+          :when (and (= "image" type) data (extensions mimeType))]
+    (let [bytes (.decode (java.util.Base64/getDecoder) (str data))
+          file (fs/file (chats/uploads-dir chats-dir id) (str (sha256-16 bytes) "." (extensions mimeType)))]
+      (when-not (fs/exists? file)
+        (fs/create-dirs (fs/parent file))
+        (fs/write-bytes file bytes)
+        (println (str "picture " (fs/file-name file) " of " id))))))
+
+(def clip-line
+  #"(?m)^\([^():\n]+: uploads/([A-Za-z0-9]+\.[a-z0-9]+)\)$")
+
+(defn clip-names
+  "The clips the session's messages name, `uploads/<name>`."
+  [entries]
+  (into #{}
+        (for [message (user-messages entries)
+              text (if (string? (:content message))
+                     [(:content message)]
+                     (keep :text (:content message)))
+              [_ name] (re-seq clip-line (str text))]
+          name)))
+
+(defn migrate-session!
+  "One old session: its chat folder, the file moved in, its pictures,
+  its name and task, its webhook. Answers the names of the clips it
+  refers to."
+  [file names tasks hooks]
+  (let [id (session-id file)
+        entries (entries file)]
+    (chats/create! "." id)
+    (move! file (fs/file (chats/session-dir chats-dir id) (fs/file-name file)))
+    (pictures! id entries)
+    (when (or (get names id) (get tasks id))
+      (chats/update-meta! chats-dir id #(merge (cond-> {}
+                                                 (get names id) (assoc :name (get names id))
+                                                 (get tasks id) (assoc :task (get tasks id)))
+                                               %)))
+    (when-let [hook (get hooks id)]
+      (let [target (fs/file (chats/dir chats-dir id) ".hook.edn")]
+        (when-not (fs/exists? target)
+          (write-edn! target hook))))
+    (move! (fs/file ".pchat" "runs" (str id ".edn")) (fs/file (chats/dir chats-dir id) ".runs.edn"))
+    (move! (fs/file "hooks" (str id ".clj")) (fs/file (chats/dir chats-dir id) "hook.clj"))
+    (move! (fs/file "hooks" (str id ".log")) (fs/file (chats/dir chats-dir id) "hook.log"))
+    (when (and (fs/exists? (fs/file (chats/dir chats-dir id) "hook.clj")) (fs/directory? "data"))
+      (copy! (fs/file "data") (fs/file (chats/dir chats-dir id) "data")))
+    [id (clip-names entries)]))
+
+(defn clips!
+  "The clips under uploads/ into the chats that name them: moved when
+  one chat does, copied when several do."
+  [clips-by-chat]
+  (let [chats-of (reduce (fn [acc [id names]]
+                           (reduce #(update %1 %2 (fnil conj []) id) acc names))
+                         {}
+                         clips-by-chat)]
+    (doseq [[name ids] chats-of
+            :let [from (fs/file "uploads" name)]
+            :when (fs/regular-file? from)]
+      (if (= 1 (count ids))
+        (move! from (fs/file (chats/uploads-dir chats-dir (first ids)) name))
+        (doseq [id ids]
+          (copy! from (fs/file (chats/uploads-dir chats-dir id) name)))))))
+
+(defn stamped-artifacts!
+  "The artifacts the owners file stamps for a chat, into that chat's
+  folder. Answers the ids of the chats that got something."
+  [owners]
+  (into #{}
+        (for [[path {:keys [chat]}] owners
+              :let [from (fs/file "artifacts" (str path))]
+              :when (and chat (chats/valid-id? chat) (fs/exists? from {:nofollow-links true}))]
+          (do (chats/create! "." chat)
+              (move! from (fs/file (chats/artifacts-dir chats-dir chat) (str path)))
+              chat))))
+
+(defn earlier-chat
+  "The chat named for the artifacts nobody made in a chat: the one of
+  that name, else a new one."
+  []
+  (or (some #(when (= earlier-name (:name (chats/meta chats-dir %))) %)
+            (chats/ids chats-dir))
+      (let [id (chats/new-id)]
+        (chats/create! "." id)
+        (chats/update-meta! chats-dir id #(assoc % :name earlier-name))
+        (println (str "a chat " (pr-str earlier-name) " for the rest: " id))
+        id)))
+
+(defn remaining-artifacts!
+  "Everything still under artifacts/ into one chat. Answers its id, or
+  nil when there was nothing."
+  []
+  (let [entries (->> (fs/list-dir "artifacts")
+                     (remove #(str/starts-with? (fs/file-name %) "."))
+                     (vec))]
+    (when (seq entries)
+      (let [id (earlier-chat)]
+        (doseq [entry entries]
+          (move! entry (fs/file (chats/artifacts-dir chats-dir id) (fs/file-name entry))))
+        id))))
+
+(defn shares!
+  "The links of the old shares file, to the chats that have the files
+  now."
+  [shares]
+  (doseq [[path share-id] shares
+          :let [id (some #(when (fs/exists? (fs/file (chats/artifacts-dir chats-dir %) (str path))) %)
+                         (chats/ids chats-dir))]
+          :when id
+          :let [file (fs/file (chats/dir chats-dir id) ".shares.edn")
+                current (read-edn file {})]
+          :when (not (get current path))]
+    (write-edn! file (assoc current path share-id))
+    (println (str "share of " path " -> " id))))
+
+(let [names (read-edn (fs/file ".pchat" "names.edn") {})
+      tasks (read-edn (fs/file ".pchat" "tasks.edn") {})
+      hooks (read-edn (fs/file ".pchat" "hooks.edn") {})
+      owners (read-edn (fs/file ".pchat" "artifact-owners.edn") {})
+      shares (read-edn (fs/file ".pchat" "shares.edn") {})
+      sessions (if (fs/directory? (fs/file ".pchat" "sessions"))
+                 (->> (fs/list-dir (fs/file ".pchat" "sessions"))
+                      (filter session-id)
+                      (sort-by fs/file-name)
+                      (vec))
+                 [])
+      before (set (chats/ids chats-dir))]
+  (fs/create-dirs chats-dir)
+  (let [migrated (mapv #(migrate-session! % names tasks hooks) sessions)]
+    (clips! migrated))
+  (stamped-artifacts! owners)
+  (when (fs/directory? "artifacts")
+    (remaining-artifacts!))
+  (shares! shares)
+  (spit (str (fs/file ".pchat" "migrated-at")) (str (java.time.Instant/now) "\n"))
+  (let [after (set (chats/ids chats-dir))
+        n (count (remove before after))]
+    (println (str n " chat" (if (= 1 n) "" "s") " brought back"))))

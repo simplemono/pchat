@@ -3,24 +3,22 @@
   voice memo, a screen recording. Images stay rchat's, scaled in the
   browser and sent to the model as image blocks; a clip is too big for
   that and means nothing to the model as bytes. It is stored under
-  `uploads/` in the workspace, and the message names its path, so the
+  `uploads/` in the chat's folder, and the message names its path, so the
   agent works with the file like with any other.
 
-  POST /upload takes both: an image goes on to rchat's handler, a clip is
-  written to disk as it comes. The browser sends a large file in pieces,
+  POST /chat/<id>/upload takes both into the chat's `uploads/` folder:
+  an image content-addressed, the way rchat stores it, a clip written
+  to disk as it comes. The browser sends a large file in pieces,
   `?id=<hex>&offset=<n>&total=<n>` on each, appended to a hidden part
   file and renamed when the last piece is in; http-kit holds a whole
   request body in memory, the pieces keep that small. A clip in one
-  request (no `id`) is named by the hash of its bytes. GET /uploads/*
-  serves the files, with ranges for the players."
+  request (no `id`) is named by the hash of its bytes. GET
+  /chat/<id>/uploads/* serves the files, with ranges for the players."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [rchat.upload :as upload]
             [rframes.http :as http]
             [rframes.transit :as transit]))
-
-(def path-prefix
-  "/uploads")
 
 (def max-bytes
   "The largest clip, a gigabyte."
@@ -88,10 +86,10 @@
 
 (defn- stored
   "The answer for a file that is complete."
-  [file]
+  [url-prefix file]
   (let [file-name (.getName (io/file file))]
     {:name file-name
-     :url (str path-prefix "/" file-name)
+     :url (str url-prefix "/" file-name)
      :kind (kind file-name)
      :size (.length (io/file file))}))
 
@@ -117,7 +115,7 @@
 
 (defn- whole!
   "A clip in one request, named by the hash of its bytes."
-  [{:keys [dir max-bytes]} w extension]
+  [{:keys [dir max-bytes url-prefix]} w extension]
   (let [digest (java.security.MessageDigest/getInstance "SHA-256")
         part (io/file dir (str "." (random-uuid) ".part"))]
     (io/make-parents part)
@@ -137,12 +135,12 @@
           (if (.isFile file)
             (.delete part)
             (.renameTo part file))
-          (respond w 200 (stored file)))))))
+          (respond w 200 (stored url-prefix file)))))))
 
 (defn- piece!
   "One piece of a clip sent in pieces: it must start where the part file
   ends; the last one completes the file."
-  [{:keys [dir max-bytes]} w extension {:strs [id offset total]}]
+  [{:keys [dir max-bytes url-prefix]} w extension {:strs [id offset total]}]
   (let [offset (parse-long (str offset))
         total (parse-long (str total))
         part (io/file dir (str "." id "." extension ".part"))
@@ -172,22 +170,40 @@
 
               (= length total)
               (do (.renameTo part file)
-                  (respond w 200 (stored file)))
+                  (respond w 200 (stored url-prefix file)))
 
               :else
               (respond w 200 {:received length})))))))
 
+(defn- image!
+  "An image, stored the way rchat does it, content-addressed; at most
+  rchat's size, the browser scales it before."
+  [{:keys [dir url-prefix]} w type]
+  (let [bytes (.readAllBytes (body w))]
+    (cond
+      (zero? (count bytes))
+      (respond w 400 {:error :empty})
+
+      (< upload/max-bytes (count bytes))
+      (respond w 413 {:error :too-large})
+
+      :else
+      (let [{:keys [name]} (upload/store! dir type bytes)]
+        (respond w 200 {:name name
+                        :url (str url-prefix "/" name)})))))
+
 (defn handler
-  "POST /upload: an image to rchat's handler for the looks directory, a
-  clip into `dir`, any other type a 415."
-  [{:keys [looks-dir] :as opts} w]
+  "POST /chat/<id>/upload for `{:dir the chat's uploads folder,
+  :url-prefix where it is served}`: an image content-addressed, a clip
+  as it comes, any other type a 415."
+  [opts w]
   (let [request (:ring/request w)
         type (content-type request)
         opts (merge {:max-bytes max-bytes} opts)
         params (query-params request)]
     (cond
       (upload/extensions type)
-      (upload/handler {:looks-dir looks-dir} w)
+      (image! opts w type)
 
       (not (media type))
       (respond w 415 {:error :not-media})
@@ -198,7 +214,9 @@
       :else
       (whole! opts w (first (media type))))))
 
-(defn- file-handler
+(defn file-handler
+  "GET /chat/<id>/uploads/<name>: the file of the chat's uploads folder
+  `dir`, never a hidden one."
   [dir w]
   (let [subpath (get-in w [:ring/route-params :*])
         file (when-not (re-find #"(^|/)\." (str subpath))
@@ -208,34 +226,30 @@
              (http/file-response (:ring/request w) file)
              http/not-found))))
 
-(defn register
-  "POST /upload and GET /uploads/*."
-  [{:keys [dir] :as opts}]
-  [{:ring/route [:post "/upload"]
-    :ring/handler (fn [w] (handler opts w))}
-   {:ring/route [:get (str path-prefix "/*")]
-    :ring/handler (fn [w] (file-handler dir w))}])
-
 (def line-pattern
-  "A line the server adds to a message for each clip: the label in the
-  language of the page, then the path in the workspace."
+  "A line the server adds to a message for each attached file: the label
+  in the language of the page, then the path in the chat's folder."
   #"(?m)^\([^():\n]+: (uploads/[A-Za-z0-9]+\.[a-z0-9]+)\)$")
 
 (defn paths
-  "The paths of the clips a message's text names."
+  "The paths of the files a message's text names."
   [text]
   (mapv second (re-seq line-pattern (str text))))
 
 (defn without-lines
-  "The text of a message without the lines that name clips."
+  "The text of a message without the lines that name files."
   [text]
   (str/trim (str/replace (str text) line-pattern "")))
 
 (defn attachments
-  "What the page shows for the clips a message names:
-  `[{:kind :video :url \"/uploads/ab12.mp4\"}]`."
+  "The clips a message names, for the page: `[{:kind :video :name
+  \"ab12.mp4\"}]`, the file under the chat's uploads folder. A picture
+  named in the text is shown from the message's image blocks, not from
+  here."
   [text]
   (vec (for [path (paths text)
-             :let [file-name (subs path (count "uploads/"))]]
-         {:kind (kind file-name)
-          :url (str path-prefix "/" file-name)})))
+             :let [file-name (subs path (count "uploads/"))
+                   kind (kind file-name)]
+             :when kind]
+         {:kind kind
+          :name file-name})))

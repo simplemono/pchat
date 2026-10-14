@@ -4,7 +4,14 @@
   and audio files as well as images. An image goes the way rchat sends
   it, scaled and in one request; a clip goes up in pieces of
   `piece-bytes`, with its progress on its chip, and the send button waits
-  until every clip is in (`pchat.uploads` on the server)."
+  until every clip is in (`pchat.uploads` on the server).
+
+  The chat a tab shows is in its URL, `/chat/<id>`: a click on a chat in
+  the sidebar changes the URL without a reload (`pushState`) and tells
+  the server which chat this tab shows now (`:chat/show` with the tab's
+  id); the back button does the same for the URL it returns to; the
+  `:ui/url` alias of the page corrects the address bar when the server
+  showed another chat than the URL named."
   (:require [clojure.string :as str]
             [cognitect.transit :as t]
             [rchat.client :as rchat]
@@ -358,16 +365,91 @@
                         :on {:click (fn [_event] (apply-theme! theme))}}
         (get labels theme (name theme))])]))
 
+(defn chat-id-of
+  "The chat id of a page path, `/chat/<id>`; nil for any other path."
+  [path]
+  (second (re-matches #"/chat/([0-9a-f-]{36})/?" (str path))))
+
+(defn- show!
+  "Tells the server which chat this tab shows now: `id`, or nil for
+  whatever the URL names."
+  [id]
+  (state/dispatch! [[:data/command {:command/kind :chat/show
+                                    :command/data {:id id
+                                                   :tab state/tabid}}]]))
+
+(defn- close-drawer!
+  "On a phone the sidebar is a drawer over a checkbox; a tap on a chat
+  closes it."
+  []
+  (when-let [^js nav (js/document.getElementById "nav")]
+    (set! (.-checked nav) false)))
+
+(defn- go!
+  "To the chat's page without a reload."
+  [id]
+  (js/history.pushState nil "" (str "/chat/" id js/location.search))
+  (close-drawer!)
+  (show! id))
+
+(defn- plain-click?
+  "A left click without a modifier: the ones that open in a new tab or
+  window stay the browser's."
+  [^js event]
+  (and (zero? (.-button event))
+       (not (or (.-metaKey event) (.-ctrlKey event) (.-shiftKey event) (.-altKey event)))))
+
+(defn- watch-chat-links!
+  "A click on a link to a chat (`a[data-chat]`, the sidebar rows) stays
+  on the page; the back and forward buttons show the chat of the URL
+  they return to."
+  []
+  (js/document.addEventListener
+   "click"
+   (fn [^js event]
+     (when-let [^js link (some-> (.-target event) (.closest "a[data-chat]"))]
+       (when (plain-click? event)
+         (.preventDefault event)
+         (go! (.getAttribute link "data-chat"))))))
+  (js/window.addEventListener
+   "popstate"
+   (fn [_]
+     (show! (chat-id-of js/location.pathname)))))
+
+(defn url-alias
+  "`[:ui/url {:ui/path \"/chat/<id>\"}]` in a frame: the page of the chat
+  the server shows; when the address bar says another, it is corrected
+  in place, no entry in the history. The base of the document follows,
+  so that a relative link in an answer, `artifacts/card.html`, is the
+  chat's file. Renders nothing."
+  [{:keys [ui/path]} _children]
+  (when (seq path)
+    (when (not= path js/location.pathname)
+      (js/history.replaceState nil "" (str path js/location.search)))
+    (when-let [^js base (js/document.querySelector "base")]
+      (let [href (str path "/")]
+        (when (not= href (.getAttribute base "href"))
+          (.setAttribute base "href" href)))))
+  [:span.url {:hidden true}])
+
 (def register
   "rchat's aliases, then pchat's composer, which replaces rchat's: the
-  later registration of a kind wins; and the theme choice."
+  later registration of a kind wins; the theme choice; the URL of the
+  chat; and `:pchat/tabid` in a command, the id of this tab."
   (concat rchat/register
           [{:ui.alias/kind :ui/composer
             :ui.alias/fn composer}
            {:ui.alias/kind :ui/theme
-            :ui.alias/fn theme-toggle}]))
+            :ui.alias/fn theme-toggle}
+           {:ui.alias/kind :ui/url
+            :ui.alias/fn url-alias}
+           {:ui.action-enricher/kind :pchat/tabid
+            :ui.action-enricher/fn (fn [{:keys [ui.action/x]}]
+                                     (when (= :pchat/tabid x)
+                                       state/tabid))}]))
 
 (defn init!
   []
   (swap! state/store assoc :pchat/theme (stored-theme))
+  (watch-chat-links!)
   (rframes/init! {:register register}))

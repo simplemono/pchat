@@ -69,7 +69,7 @@
 
 (deftest page-test
   (let [chat (chat/fold chat/empty-chat events)
-        page (i18n/translate (view/page {:chats {"a" chat} :current "a"} {}) :en)
+        page (i18n/translate (view/page {:chats {"a" chat}} {:id "a"}) :en)
         feed (i18n/translate (view/feed chat) :en)
         items (filter #(and (vector? %) (keyword? (first %)) (clojure.string/starts-with? (name (first %)) "div.item"))
                       (tree-seq coll? seq feed))]
@@ -78,4 +78,7 @@
     (testing "the tool row is collapsed and named for a person"
       (is (some #{"Wrote a file"} (texts feed)))
       (is (some #{"artifacts/hello.html"} (texts feed))))
-    (is (some #{"$0.01"} (texts page)))))
+    (is (some #{"$0.01"} (texts page)))
+    (testing "the page names the chat it shows, for the address bar"
+      (is (some #(and (vector? %) (= :ui/url (first %)) (= "/chat/a" (:ui/path (second %))))
+                (tree-seq coll? seq page))))))
