@@ -16,6 +16,7 @@
   the list comes from pi's session files, the history of a chat is read
   from its file when it is opened."
   (:require [babashka.fs :as fs]
+            [babashka.nrepl.server :as nrepl-server]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -909,6 +910,23 @@
         (open request)
         (secured request)))))
 
+(defn start-nrepl!
+  "An nREPL server for live development, on by default: bound to
+  127.0.0.1 only, so on a sprite nothing outside reaches it (the sprite
+  exposes the page's port alone, `sprite proxy <port>` tunnels through
+  the authenticated API), and on a laptop it is what `bb nrepl-server`
+  gives. The port is `PCHAT_NREPL_PORT` or a free one, written to
+  `.nrepl-port` in the workspace for editors; `PCHAT_NREPL=off` leaves
+  it out. Answers the port, nil when off."
+  [workspace]
+  (when-not (= "off" (System/getenv "PCHAT_NREPL"))
+    (let [server (nrepl-server/start-server! {:host "127.0.0.1"
+                                              :port (parse-long (or (System/getenv "PCHAT_NREPL_PORT") "0"))
+                                              :quiet true})
+          port (.getLocalPort ^java.net.ServerSocket (:socket server))]
+      (spit (io/file workspace ".nrepl-port") (str port))
+      port)))
+
 (defn -main
   [& args]
   ;; `bb pchat.jar --version`: the version built in, nothing else; the
@@ -940,7 +958,8 @@
                                                        (hooks/stop-all! hooks))))
   (sse/watch! db)
   (let [port (parse-long (or (System/getenv "PORT") "8080"))
-        token (System/getenv "PCHAT_TOKEN")]
+        token (System/getenv "PCHAT_TOKEN")
+        nrepl-port (start-nrepl! workspace)]
     ;; http-kit holds a request body in memory: the browser sends a clip
     ;; in pieces of 8 MB (`pchat.uploads`), this leaves room for a clip
     ;; of a few dozen MB in one request.
@@ -956,6 +975,7 @@
                     :else (str "http://localhost:" port))
                   ", " (count (:chats @db)) " chats, the model is " provider "/" model
                   ", the workspace " (.getCanonicalPath workspace)
+                  (if nrepl-port (str ", nREPL on 127.0.0.1:" nrepl-port) ", no nREPL")
                   ", " (tools/report)
                   ", skills: " (if-let [skills (seq (:skills @db))]
                                  (str (str/join " " (map :name skills)) " from " (skills/checkout))

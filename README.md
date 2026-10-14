@@ -265,6 +265,16 @@ under a second. The banner appears only when `PCHAT_JAR` is set, which
 `deploy/start.sh` does: a pchat started any other way is never offered
 an update, since nothing would start it again.
 
+## Live development
+
+pchat starts an nREPL server by default, bound to 127.0.0.1 on a free
+port written to `.nrepl-port` in the workspace (`PCHAT_NREPL_PORT` pins
+it, `PCHAT_NREPL=off` leaves it out). On a sprite nothing outside
+reaches it; `sprite proxy <port>` tunnels to it through the authenticated
+API, and a changed namespace evaluated there shows on the page through
+its frames, no restart. Stylesheets and other resources come from the
+jar, so those take a `bb deploy <sprite>`.
+
 ## Status
 
 Milestone 1, 2026-10-10: one chat on one pi process. `pchat.pi` spawns
