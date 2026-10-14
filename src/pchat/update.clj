@@ -130,10 +130,20 @@
           (not= version answer) (str "the new jar answers " (if (str/blank? answer) "nothing" answer) ", not " version)
           :else nil)))))
 
+(defn new-jar-file
+  "Where the download lands, next to the running jar: `pchat.new.jar`
+  for `pchat.jar`. The name has to end in `.jar`, since babashka runs a
+  file by its extension and would read `pchat.jar.new` as a script."
+  [jar]
+  (let [path (str jar)]
+    (io/file (if (str/ends-with? path ".jar")
+               (str (subs path 0 (- (count path) 4)) ".new.jar")
+               (str path ".new.jar")))))
+
 (defn download!
-  "The release's jar as `<jar>.new`; answers the file."
+  "The release's jar as `new-jar-file`; answers the file."
   [{:keys [jar latest-url]} version]
-  (let [new-jar (io/file (str jar ".new"))]
+  (let [new-jar (new-jar-file jar)]
     (with-open [in (:body (http/get (download-url latest-url version) {:as :stream :timeout 600000}))]
       (io/copy in new-jar))
     new-jar))
@@ -164,7 +174,7 @@
                       (do (Thread/sleep 2000)
                           (recur)))))))
           (catch Exception e
-            (fs/delete-if-exists (io/file (str jar ".new")))
+            (fs/delete-if-exists (new-jar-file jar))
             (fail! db (or (ex-message e) (str e))))))
       :started)))
 

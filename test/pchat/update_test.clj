@@ -69,6 +69,12 @@
   (is (= "https://github.com/storrito/pchat/releases/download/v0.1.4/pchat.jar"
          (update/download-url "https://github.com/storrito/pchat/releases/latest" "0.1.4"))))
 
+(deftest new-jar-file-test
+  (testing "the download keeps the .jar ending, which babashka runs a file by"
+    (is (= "pchat.new.jar" (.getName (update/new-jar-file (io/file "/home/sprite/pchat/pchat.jar")))))
+    (is (= "/home/sprite/pchat/pchat.new.jar" (str (update/new-jar-file "/home/sprite/pchat/pchat.jar"))))
+    (is (= "app.new.jar" (.getName (update/new-jar-file "app"))))))
+
 (deftest running-jar-test
   (testing "only PCHAT_JAR names a jar to replace; without it there is no banner"
     (is (nil? (update/running-jar nil)))
@@ -116,7 +122,7 @@
         (is (wait-for #(= :ready (get-in @db [:update :state]))))
         (is (empty? @exits) "nothing ends while a chat works")
         (is (= "the old jar" (slurp jar)) "the running jar is untouched")
-        (is (= "the new jar" (slurp (io/file dir "pchat.jar.new")))))
+        (is (= "the new jar" (slurp (io/file dir "pchat.new.jar")))))
       (testing "a second click while that runs does nothing"
         (is (nil? (update/update! handle))))
       (testing "idle: the new jar in place, the process ends with 75"
@@ -124,7 +130,7 @@
         (is (wait-for #(seq @exits)))
         (is (= [75] @exits))
         (is (= "the new jar" (slurp jar)))
-        (is (not (.exists (io/file dir "pchat.jar.new"))))))))
+        (is (not (.exists (io/file dir "pchat.new.jar"))))))))
 
 (deftest check-run-test
   (with-stub [base _requests]
@@ -145,7 +151,7 @@
       (is (= "the new jar answers 0.0.1, not 0.1.4" (get-in @db [:update :error])))
       (is (empty? @exits))
       (is (= "the old jar" (slurp jar)))
-      (is (not (.exists (io/file dir "pchat.jar.new"))) "the rejected download is gone")
+      (is (not (.exists (io/file dir "pchat.new.jar"))) "the rejected download is gone")
       (testing "try again"
         (is (= :started (update/update! handle)))
         (is (wait-for #(= :failed (get-in @db [:update :state]))))))))
