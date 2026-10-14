@@ -151,3 +151,81 @@
       (artifacts/pick! handle "notes.html")
       (artifacts/refollow! handle)
       (is (= "notes.html" (:artifacts/current @db))))))
+
+(deftest hints-test
+  (testing "the artifact a tool call is about"
+    (is (= #{"story"} (artifacts/hints-of {:name "bash" :args {:command "bin/new story"}})))
+    (is (= #{"story"} (artifacts/hints-of {:name "bash" :args {:command "cd /w && bin/render story 2>&1 | tail -3"}})))
+    (is (= #{"card"} (artifacts/hints-of {:name "write" :args {:path "artifacts/card/src/artifact/main.clj"}})))
+    (is (= #{"card"} (artifacts/hints-of {:name "edit" :args {:path "/home/sprite/pchat/workspace/artifacts/card/design.edn"}})))
+    (is (= #{} (artifacts/hints-of {:name "read" :args {:path "artifacts/card/design.edn"}})))
+    (is (= #{} (artifacts/hints-of {:name "bash" :args {:command "ls"}}))))
+  (testing "what an item of the tree belongs to"
+    (is (= "card" (artifacts/top-name "card/src/main.clj")))
+    (is (= "story" (artifacts/top-name "story.mp4")) "the video of a project")
+    (is (= "pool.png" (artifacts/top-name "pool.png")))))
+
+(deftest owners-test
+  (let [dir (temp-dir)
+        owners-file (io/file (temp-dir) ".pchat" "artifact-owners.edn")
+        db (atom {:chats {"a" {:id "a" :status :working :name "Alpha"}
+                          "b" {:id "b" :status :idle :name "Beta"}}
+                  :current "a"})
+        handle (artifacts/handle {:db db :dir dir :owners-file owners-file})]
+    (testing "a new file is the one working chat's"
+      (touch! dir "pool.png" 1000)
+      (artifacts/refresh! handle)
+      (is (= "a" (artifacts/owner @db "pool.png")))
+      (is (= "a" (get-in (read-string (slurp owners-file)) ["pool.png" :chat])) "kept in the file"))
+    (testing "a tool call names the artifact: that chat's, whoever works"
+      (artifacts/hint! handle "b" {:name "bash" :args {:command "bin/new clip"}})
+      (touch! dir "clip/bb.edn" 2000)
+      (touch! dir "clip/src/artifact/main.clj" 2100)
+      (artifacts/refresh! handle)
+      (is (= "b" (artifacts/owner @db "clip"))))
+    (testing "the video of a project is its chat's"
+      (touch! dir "clip.mp4" 3000)
+      (artifacts/refresh! handle)
+      (is (= "b" (artifacts/owner @db "clip.mp4"))))
+    (testing "nothing works and no tool named it: unstamped"
+      (swap! db assoc-in [:chats "a" :status] :idle)
+      (touch! dir "dropped.pdf" 4000)
+      (artifacts/refresh! handle)
+      (is (nil? (artifacts/owner @db "dropped.pdf"))))
+    (testing "the current chat's own comes first on screen, another chat's new file does not take it"
+      (is (= "a" (:current @db)))
+      (is (= "pool.png" (:artifacts/current @db)) "the newest own, although clip.mp4 and dropped.pdf are newer"))
+    (testing "a chat without anything of its own sees the newest overall"
+      (swap! db assoc :current "c")
+      (artifacts/refollow! handle)
+      (is (= "dropped.pdf" (:artifacts/current @db))))
+    (testing "a deleted chat's stamps go, its files stay"
+      (artifacts/forget-chat! handle "b")
+      (is (nil? (artifacts/owner @db "clip")))
+      (is (= "a" (artifacts/owner @db "pool.png")))
+      (is (.isFile (io/file dir "clip.mp4"))))
+    (testing "the stamps come back from the file at the start"
+      (let [db2 (atom {})]
+        (artifacts/load-owners! (artifacts/handle {:db db2 :dir dir :owners-file owners-file}))
+        (is (= "a" (artifacts/owner @db2 "pool.png")))))))
+
+(deftest options-test
+  (let [files [{:path "card.html" :kind :page :title "Card" :mtime 3}
+               {:path "clip" :kind :project :title "Clip" :mtime 2}
+               {:path "pool.png" :kind :image :title "Pool" :mtime 1}]
+        db {:chats {"a" {:id "a" :name "Alpha"} "b" {:id "b" :name "Beta"}}
+            :current "a"
+            :artifacts/owners {"card.html" {:chat "a" :at 1} "clip" {:chat "b" :at 1}}
+            :artifacts/list files
+            :artifacts/current "card.html"}
+        strings (fn [hiccup] (filter string? (tree-seq coll? seq hiccup)))
+        view (artifacts/view db {:chat-name :name})
+        groups (filter #(and (vector? %) (= :optgroup (first %))) (tree-seq coll? seq view))]
+    (testing "own first, the other chat's under its name, the unstamped under Other"
+      (is (= 2 (count groups)))
+      (is (= [[:i18n :artifacts/others] [:i18n :artifacts/unowned]] (map #(get-in % [1 :label]) groups)))
+      (is (some #{"Beta"} (strings (first groups))))
+      (is (= 3 (count (filter #{:option} (tags view))))))
+    (testing "nothing stamped: one flat list"
+      (is (empty? (filter #(and (vector? %) (= :optgroup (first %)))
+                          (tree-seq coll? seq (artifacts/view (dissoc db :artifacts/owners) {}))))))))

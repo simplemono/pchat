@@ -56,6 +56,8 @@
  :artifacts/render "Video erstellen"
  :artifacts/rendering [:fn/str "Video wird erstellt {{:progress}}"]
  :artifacts/render-stop "Stopp"
+ :artifacts/others "Aus anderen Chats"
+ :artifacts/unowned "Sonstiges"
  :artifacts/render-failed [:fn/str "Das Video ist nicht gelungen: {{:error}}"]
  :artifacts/creation "Dein Werk"
  :artifacts/empty "Was der Agent für dich macht, erscheint hier."

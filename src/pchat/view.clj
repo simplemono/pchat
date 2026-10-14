@@ -622,4 +622,4 @@
              (feed chat (some-> skill (intro locale)))
              (composer chat (assoc opts :placeholder (some-> skill (skills/text :placeholder locale))))))]
          (when card?
-           [:section.card (artifacts/view db (select-keys opts [:project :share]))])]])]))
+           [:section.card (artifacts/view db (assoc (select-keys opts [:project :share]) :chat-name chat-name))])]])]))

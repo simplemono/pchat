@@ -72,7 +72,8 @@
 
 (def artifacts
   (artifacts/handle {:db db
-                     :dir (io/file workspace "artifacts")}))
+                     :dir (io/file workspace "artifacts")
+                     :owners-file (io/file workspace ".pchat" "artifact-owners.edn")}))
 
 (def looks-dir
   (io/file workspace ".pchat" "looks"))
@@ -285,6 +286,9 @@
                 (-> db
                     (update-in [:chats id] chat/event event)
                     (assoc-in [:chats id :updated] (now))))))
+  ;; A tool starts: what it names is this chat's once it appears.
+  (when (= "tool_execution_start" (:type event))
+    (artifacts/hint! artifacts id {:name (:toolName event) :args (:args event)}))
   ;; A tool just ran: what it wrote is on screen right away, the poll
   ;; catches the rest.
   (when (#{"tool_execution_end" "agent_settled"} (:type event))
@@ -575,6 +579,7 @@
   (write-names! (dissoc (read-names) id))
   (write-tasks! (dissoc (read-tasks) id))
   (hooks/forget! hooks id)
+  (artifacts/forget-chat! artifacts id)
   (swap! db (fn [db]
               (let [chats (dissoc (:chats db) id)
                     current (if (= id (:current db))
@@ -922,6 +927,7 @@
   (hooks/load! hooks)
   (mcp/load! connections)
   (open! (:current @db))
+  (artifacts/load-owners! artifacts)
   (artifacts/refresh! artifacts)
   (poll-artifacts!)
   (sync-projects!)
