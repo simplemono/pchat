@@ -79,6 +79,12 @@
  :settings/title "Einstellungen"
  :settings/close "Zurück zum Chat"
 
+ :theme/tab "Darstellung"
+ :theme/explain "Wie die Seite aussieht: hell, dunkel oder wie dein Gerät eingestellt ist. Die Wahl bleibt in diesem Browser."
+ :theme/system "Wie mein Gerät"
+ :theme/light "Hell"
+ :theme/dark "Dunkel"
+
  :connections/button "Verbindungen"
  :connections/explain "Eine Verbindung gibt dem Agenten die Werkzeuge eines Dienstes: ein Kalender, ein Dateispeicher, eine Datenbank, ein Shop. Hier eine anlegen, oder den Agenten herausfinden lassen, wie es geht, und sie einrichten lassen."
  :connections/none "Noch keine Verbindungen."

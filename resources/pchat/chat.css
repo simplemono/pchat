@@ -1,8 +1,31 @@
 /* The chat: a column with the header, the feed and the composer at the
-   bottom. Dark by default; an app overrides the variables or ships its
-   own stylesheet. */
+   bottom. Light by default; `html.theme-dark` is the dark scheme, and
+   `html.theme-system` follows the system (the page's head script sets
+   the class from the person's choice before the first paint). Every
+   color is a variable here, an app overrides them or ships its own
+   stylesheet. */
 
 :root {
+  color-scheme: light;
+  --rchat-bg: #faf9f7;
+  --rchat-panel: #ffffff;
+  --rchat-line: #e4e1dc;
+  --rchat-text: #1f2328;
+  --rchat-muted: #6b7079;
+  --rchat-accent: #e0394b;
+  --rchat-ok: #2f9e6a;
+  --rchat-warn: #b7791f;
+  --rchat-on-accent: #ffffff;
+  --rchat-code-bg: #f1efeb;
+  --rchat-code-text: #2b2f36;
+  /* The ground of a rendered design: a light page in both schemes, so
+     that the model's inline styles start from a page. */
+  --rchat-page-bg: #ffffff;
+  --rchat-page-text: #111111;
+}
+
+html.theme-dark {
+  color-scheme: dark;
   --rchat-bg: #111315;
   --rchat-panel: #1a1d21;
   --rchat-line: #2b3036;
@@ -11,6 +34,26 @@
   --rchat-accent: #ff4d5e;
   --rchat-ok: #3ecf8e;
   --rchat-warn: #f5b942;
+  --rchat-on-accent: #ffffff;
+  --rchat-code-bg: #0b0c0e;
+  --rchat-code-text: #c5cad1;
+}
+
+@media (prefers-color-scheme: dark) {
+  html.theme-system {
+    color-scheme: dark;
+    --rchat-bg: #111315;
+    --rchat-panel: #1a1d21;
+    --rchat-line: #2b3036;
+    --rchat-text: #e8eaed;
+    --rchat-muted: #8d949e;
+    --rchat-accent: #ff4d5e;
+    --rchat-ok: #3ecf8e;
+    --rchat-warn: #f5b942;
+    --rchat-on-accent: #ffffff;
+    --rchat-code-bg: #0b0c0e;
+    --rchat-code-text: #c5cad1;
+  }
 }
 
 * {
@@ -143,7 +186,7 @@ body {
   min-height: 0;
   border: 1px solid var(--rchat-line);
   border-radius: 10px;
-  background: #fff;
+  background: var(--rchat-page-bg);
 }
 
 /* The creation of the REPL agent: hiccup rendered right here, on a light
@@ -154,8 +197,8 @@ body {
   overflow: auto;
   padding: 20px;
   border-radius: 10px;
-  background: #fff;
-  color: #111;
+  background: var(--rchat-page-bg);
+  color: var(--rchat-page-text);
   font: 16px/1.5 system-ui, sans-serif;
 }
 
@@ -187,8 +230,8 @@ body {
   min-height: 0;
   overflow: auto;
   border-radius: 10px;
-  background: #fff;
-  color: #111;
+  background: var(--rchat-page-bg);
+  color: var(--rchat-page-text);
   font: 16px/1.5 system-ui, sans-serif;
 }
 
@@ -341,7 +384,7 @@ body {
 .rchat button.primary {
   border-color: var(--rchat-accent);
   background: var(--rchat-accent);
-  color: #fff;
+  color: var(--rchat-on-accent);
   font-weight: 600;
 }
 
@@ -413,8 +456,8 @@ body {
 .rchat .text code {
   padding: 1px 5px;
   border-radius: 4px;
-  background: #0b0c0e;
-  color: #c5cad1;
+  background: var(--rchat-code-bg);
+  color: var(--rchat-code-text);
   font: 13px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
 }
 
@@ -561,8 +604,8 @@ body {
   margin: 6px 0 0;
   padding: 10px;
   border-radius: 8px;
-  background: #0b0c0e;
-  color: #c5cad1;
+  background: var(--rchat-code-bg);
+  color: var(--rchat-code-text);
   font: 12px/1.45 ui-monospace, "SF Mono", Menlo, monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;

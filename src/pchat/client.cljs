@@ -318,13 +318,56 @@
                                       (send!))}}
        (or send-label "Send")]]]))
 
+(def theme-key
+  "Where the browser keeps the person's scheme: `light`, `dark` or
+  `system`. The page's head script reads the same key before the first
+  paint."
+  "pchat-theme")
+
+(def themes
+  [:system :light :dark])
+
+(defn stored-theme
+  "The scheme the browser keeps, `:light` without one."
+  []
+  (let [stored (try (js/localStorage.getItem theme-key) (catch :default _ nil))]
+    (or (some #{(keyword stored)} themes) :light)))
+
+(defn apply-theme!
+  "Puts the scheme on <html> (the stylesheets key on `theme-light`,
+  `theme-dark` and `theme-system`) and keeps it in the browser."
+  [theme]
+  (let [classes (.-classList js/document.documentElement)]
+    (doseq [t themes]
+      (.remove classes (str "theme-" (name t))))
+    (.add classes (str "theme-" (name theme)))
+    (try (js/localStorage.setItem theme-key (name theme)) (catch :default _ nil))
+    (swap! state/store assoc :pchat/theme theme)))
+
+(defn theme-toggle
+  "The Appearance choice of the settings: three buttons, the current one
+  marked. `:ui/labels` names them, `:ui/state` (the client state, which
+  the runtime puts here) carries the current choice."
+  [{:keys [ui/labels ui/state]} _children]
+  (let [current (or (:pchat/theme state) (stored-theme))]
+    [:div.theme
+     (for [theme themes]
+       [:button.choice {:replicant/key theme
+                        :class (when (= theme current) "current")
+                        :aria-pressed (if (= theme current) "true" "false")
+                        :on {:click (fn [_event] (apply-theme! theme))}}
+        (get labels theme (name theme))])]))
+
 (def register
   "rchat's aliases, then pchat's composer, which replaces rchat's: the
-  later registration of a kind wins."
+  later registration of a kind wins; and the theme choice."
   (concat rchat/register
           [{:ui.alias/kind :ui/composer
-            :ui.alias/fn composer}]))
+            :ui.alias/fn composer}
+           {:ui.alias/kind :ui/theme
+            :ui.alias/fn theme-toggle}]))
 
 (defn init!
   []
+  (swap! state/store assoc :pchat/theme (stored-theme))
   (rframes/init! {:register register}))

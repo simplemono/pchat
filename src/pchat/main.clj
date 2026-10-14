@@ -781,6 +781,15 @@
 (def head
   (str "<title>pchat</title>"
        "<link rel=\"icon\" href=\"data:,\">"
+       ;; The scheme of the page before the first paint: the person's
+       ;; choice from localStorage (`:ui/theme` in pchat.client writes
+       ;; it), light without one. The class on <html> is outside
+       ;; Replicant's root, so a frame never undoes it.
+       "<script>(function () {"
+       " var t; try { t = localStorage.getItem('pchat-theme'); } catch (e) {}"
+       " if (t !== 'dark' && t !== 'system') t = 'light';"
+       " document.documentElement.classList.add('theme-' + t);"
+       "})();</script>"
        ;; The shim's <html lang> is static; the page carries the language
        ;; of the connection on .pchat, and this moves it up.
        "<script>new MutationObserver(function () {"

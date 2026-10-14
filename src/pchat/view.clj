@@ -365,12 +365,27 @@
    (connection-form connections)
    (agent-form)])
 
+(defn appearance-tab
+  "The Appearance tab of the settings: the scheme of the page, light,
+  dark or the system's. The choice lives in the browser (`:ui/theme`
+  in `pchat.client` keeps it in localStorage), not in the db; the
+  server only names the three choices."
+  []
+  [:section.appearance
+   [:p.explain [:i18n :theme/explain]]
+   [:ui/theme {:ui/labels {:system [:i18n :theme/system]
+                           :light [:i18n :theme/light]
+                           :dark [:i18n :theme/dark]}}]])
+
 (def tabs
   "The tabs of the settings, each with the view of the db it shows; the
   first one is the default. More follow here."
   [{:id :connections
     :label [:i18n :connections/button]
-    :view (fn [db] (connections-tab (:connections db)))}])
+    :view (fn [db] (connections-tab (:connections db)))}
+   {:id :appearance
+    :label [:i18n :theme/tab]
+    :view (fn [_db] (appearance-tab))}])
 
 (defn settings-view
   "In place of the chat: a bar with the way back, the tabs, the one

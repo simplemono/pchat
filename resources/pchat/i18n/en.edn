@@ -81,6 +81,12 @@
  :settings/title "Settings"
  :settings/close "Back to the chat"
 
+ :theme/tab "Appearance"
+ :theme/explain "How the page looks: light, dark, or whatever your device uses. The choice stays in this browser."
+ :theme/system "Like my device"
+ :theme/light "Light"
+ :theme/dark "Dark"
+
  :connections/button "Connections"
  :connections/explain "A connection gives the agent the tools of a service: a calendar, a file store, a database, a shop. Add one here, or let the agent find out how and set it up."
  :connections/none "No connections yet."

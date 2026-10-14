@@ -2,6 +2,7 @@
   (:require [cheshire.core :as json]
             [clojure.java.io :as io]
             [clojure.test :refer [deftest is testing]]
+            [pchat.i18n :as i18n]
             [pchat.setup :as setup]
             [pchat.view :as view]))
 
@@ -76,3 +77,13 @@
       (io/delete-file (io/file markers "video-tools-installing"))
       (is (= {:pi "ready" :video-tools "ready"}
              (json/parse-string (:body (:ring/response (setup/api-handler handle {}))) true))))))
+
+(deftest appearance-tab-test
+  (testing "the Appearance tab names the three schemes for the browser's toggle"
+    (let [view (i18n/translate (view/settings-view {:settings-tab :appearance :connections {}}) :en)
+          toggle (first (filter #(and (vector? %) (= :ui/theme (first %))) (tree-seq coll? seq view)))
+          labels (get-in toggle [1 :ui/labels])]
+      (is (= {:system "Like my device" :light "Light" :dark "Dark"} labels))
+      (is (some #{"Appearance"} (filter string? (tree-seq coll? seq view))) "the tab is there")))
+  (testing "Connections stays the first tab"
+    (is (= [:connections :appearance] (mapv :id view/tabs)))))

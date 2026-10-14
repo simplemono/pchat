@@ -1,3 +1,71 @@
+/* The colors of pchat's own parts, light by default; `html.theme-dark`
+   and `html.theme-system` under a dark system follow chat.css. */
+
+:root {
+  --pchat-sidebar-bg: #f3f1ed;
+  --pchat-sidebar-line: #e4e1dc;
+  --pchat-sidebar-text: #2b2f36;
+  --pchat-sidebar-item: #ffffff;
+  --pchat-sidebar-item-line: #d9d5ce;
+  --pchat-sidebar-hover: #ebe8e2;
+  --pchat-sidebar-current: #e6e2db;
+  --pchat-sidebar-current-text: #111111;
+  --pchat-sidebar-link: #7a7f88;
+  --pchat-danger: #d2343b;
+  --pchat-working: #3ea86b;
+  --pchat-input-line: #d7d7d2;
+  --pchat-input-bg: #ffffff;
+  --pchat-input-text: #444444;
+  --pchat-media-bg: #111111;
+  --pchat-failed: #c0392b;
+  --pchat-shadow: rgba(0, 0, 0, 0.3);
+  --pchat-backdrop: rgba(0, 0, 0, 0.35);
+}
+
+html.theme-dark {
+  --pchat-sidebar-bg: #15161a;
+  --pchat-sidebar-line: #2a2c33;
+  --pchat-sidebar-text: #d7d9df;
+  --pchat-sidebar-item: #1f2128;
+  --pchat-sidebar-item-line: #3a3d47;
+  --pchat-sidebar-hover: #1f2128;
+  --pchat-sidebar-current: #272a33;
+  --pchat-sidebar-current-text: #ffffff;
+  --pchat-sidebar-link: #8b8f9a;
+  --pchat-danger: #e5484d;
+  --pchat-working: #7cc67c;
+  --pchat-input-line: #3a3d47;
+  --pchat-input-bg: #1f2128;
+  --pchat-input-text: #d7d9df;
+  --pchat-media-bg: #111111;
+  --pchat-failed: #c0392b;
+  --pchat-shadow: rgba(0, 0, 0, 0.6);
+  --pchat-backdrop: rgba(0, 0, 0, 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+  html.theme-system {
+    --pchat-sidebar-bg: #15161a;
+    --pchat-sidebar-line: #2a2c33;
+    --pchat-sidebar-text: #d7d9df;
+    --pchat-sidebar-item: #1f2128;
+    --pchat-sidebar-item-line: #3a3d47;
+    --pchat-sidebar-hover: #1f2128;
+    --pchat-sidebar-current: #272a33;
+    --pchat-sidebar-current-text: #ffffff;
+    --pchat-sidebar-link: #8b8f9a;
+    --pchat-danger: #e5484d;
+    --pchat-working: #7cc67c;
+    --pchat-input-line: #3a3d47;
+    --pchat-input-bg: #1f2128;
+    --pchat-input-text: #d7d9df;
+    --pchat-media-bg: #111111;
+    --pchat-failed: #c0392b;
+    --pchat-shadow: rgba(0, 0, 0, 0.6);
+    --pchat-backdrop: rgba(0, 0, 0, 0.5);
+  }
+}
+
 /* pchat on top of rchat's stylesheet: the sidebar with the chats, and
    the phone layout, where the sidebar is a drawer and the chat and the
    card are two tabs. Both are driven by hidden inputs and their labels,
@@ -42,9 +110,9 @@
   flex-direction: column;
   gap: 12px;
   padding: 16px 12px;
-  background: #15161a;
-  border-right: 1px solid #2a2c33;
-  color: #d7d9df;
+  background: var(--pchat-sidebar-bg);
+  border-right: 1px solid var(--pchat-sidebar-line);
+  color: var(--pchat-sidebar-text);
   overflow-y: auto;
 }
 
@@ -65,9 +133,9 @@
 .pchat .sidebar .new {
   display: block;
   padding: 8px 12px;
-  border: 1px solid #3a3d47;
+  border: 1px solid var(--pchat-sidebar-item-line);
   border-radius: 8px;
-  background: #1f2128;
+  background: var(--pchat-sidebar-item);
   color: inherit;
   font: inherit;
   cursor: pointer;
@@ -75,7 +143,7 @@
 }
 
 .pchat .sidebar .new:hover {
-  background: #272a33;
+  background: var(--pchat-sidebar-hover);
 }
 
 .pchat .sidebar .chats {
@@ -109,19 +177,19 @@
 }
 
 .pchat .sidebar .chats li:hover {
-  background: #1f2128;
+  background: var(--pchat-sidebar-hover);
 }
 
 .pchat .sidebar .chats li.current {
-  background: #272a33;
-  color: #fff;
+  background: var(--pchat-sidebar-current);
+  color: var(--pchat-sidebar-current-text);
 }
 
 .pchat .sidebar .chats li.working .dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #7cc67c;
+  background: var(--pchat-working);
   flex: none;
   animation: rchat-pulse 1.2s infinite;
 }
@@ -162,7 +230,7 @@
 }
 
 .pchat .rchat .bar button.link.danger {
-  color: #e5484d;
+  color: var(--pchat-danger);
 }
 
 .pchat .rchat .bar button.link.hook.on {
@@ -227,7 +295,7 @@
   flex-direction: column;
   gap: 8px;
   padding-top: 12px;
-  border-top: 1px solid #2a2c33;
+  border-top: 1px solid var(--pchat-sidebar-line);
 }
 
 .pchat .sidebar .settings {
@@ -239,12 +307,12 @@
 }
 
 .pchat .sidebar .settings:hover {
-  background: #1f2128;
+  background: var(--pchat-sidebar-hover);
 }
 
 .pchat .sidebar .settings.current {
-  background: #272a33;
-  color: #fff;
+  background: var(--pchat-sidebar-current);
+  color: var(--pchat-sidebar-current-text);
 }
 
 .pchat .rchat .bar button.link.close {
@@ -380,13 +448,34 @@
 }
 
 .pchat .rchat .settings .connection .state.error {
-  color: #e5484d;
+  color: var(--pchat-danger);
 }
 
 .pchat .rchat .settings .connection .actions {
   flex: none;
   display: flex;
   gap: 2px;
+}
+
+.pchat .rchat .settings .theme {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pchat .rchat .settings .theme .choice {
+  padding: 8px 14px;
+  border: 1px solid var(--rchat-line);
+  border-radius: 8px;
+  background: var(--rchat-panel);
+  color: var(--rchat-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.pchat .rchat .settings .theme .choice.current {
+  border-color: var(--rchat-text);
+  font-weight: 600;
 }
 
 .pchat .rchat .settings .box {
@@ -477,7 +566,7 @@
 }
 
 .pchat .rchat .settings button.link.danger {
-  color: #e5484d;
+  color: var(--pchat-danger);
 }
 
 .pchat .rchat .settings .agent .row {
@@ -519,12 +608,12 @@
 }
 
 .pchat .sidebar .languages a {
-  color: #8b8f9a;
+  color: var(--pchat-sidebar-link);
   text-decoration: none;
 }
 
 .pchat .sidebar .languages a.current {
-  color: #fff;
+  color: var(--pchat-sidebar-current-text);
   font-weight: 700;
 }
 
@@ -538,12 +627,12 @@
   flex: 1 1 200px;
   min-width: 160px;
   padding: 2px 6px;
-  border: 1px solid #d7d7d2;
+  border: 1px solid var(--pchat-input-line);
   border-radius: 6px;
-  background: #fff;
+  background: var(--pchat-input-bg);
   font: inherit;
   font-size: 12px;
-  color: #444;
+  color: var(--pchat-input-text);
   text-overflow: ellipsis;
 }
 
@@ -579,7 +668,7 @@
   margin: 4px 6px 4px 0;
   border: 1px solid var(--rchat-line);
   border-radius: 8px;
-  background: var(--rchat-bg, #fff);
+  background: var(--rchat-bg);
   color: inherit;
   font: inherit;
   cursor: pointer;
@@ -614,7 +703,7 @@
     z-index: 20;
     width: min(80vw, 300px);
     padding-top: calc(16px + env(safe-area-inset-top, 0px));
-    box-shadow: 0 0 40px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 0 40px var(--pchat-shadow);
     transform: translateX(-100%);
     transition: transform 0.2s ease;
   }
@@ -628,7 +717,7 @@
     position: fixed;
     inset: 0;
     z-index: 10;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--pchat-backdrop);
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s ease;
@@ -779,9 +868,10 @@
   min-width: 140px;
   max-width: 320px;
   padding: 4px 8px;
-  border: 1px solid #d7d7d2;
+  border: 1px solid var(--pchat-input-line);
   border-radius: 6px;
-  background: #fff;
+  background: var(--pchat-input-bg);
+  color: var(--pchat-input-text);
   font: inherit;
 }
 
@@ -792,7 +882,7 @@
   align-items: center;
   justify-content: center;
   overflow: auto;
-  background: #111;
+  background: var(--pchat-media-bg);
   border-radius: 10px;
 }
 
@@ -839,7 +929,7 @@
 }
 
 .rchat .attachment.failed .clip {
-  border-color: #c0392b;
+  border-color: var(--pchat-failed);
 }
 
 .rchat .looks.clips video {
@@ -906,7 +996,7 @@
   padding: 8px 14px;
   border-radius: 8px;
   background: var(--rchat-accent);
-  color: #fff;
+  color: var(--rchat-on-accent);
   font-weight: 600;
   cursor: pointer;
 }
