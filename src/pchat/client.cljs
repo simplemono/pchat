@@ -392,6 +392,25 @@
   (close-drawer!)
   (show! id))
 
+(defn job-id-of
+  "The job id of a page path, `/job/<id>`; nil for any other path."
+  [path]
+  (second (re-matches #"/job/([0-9a-f-]{36})/?" (str path))))
+
+(defn- show-job!
+  "Tells the server which job this tab shows now."
+  [id]
+  (state/dispatch! [[:data/command {:command/kind :job/show
+                                    :command/data {:id id
+                                                   :tab state/tabid}}]]))
+
+(defn- go-job!
+  "To the job's page without a reload."
+  [id]
+  (js/history.pushState nil "" (str "/job/" id js/location.search))
+  (close-drawer!)
+  (show-job! id))
+
 (defn- plain-click?
   "A left click without a modifier: the ones that open in a new tab or
   window stay the browser's."
@@ -400,21 +419,25 @@
        (not (or (.-metaKey event) (.-ctrlKey event) (.-shiftKey event) (.-altKey event)))))
 
 (defn- watch-chat-links!
-  "A click on a link to a chat (`a[data-chat]`, the sidebar rows) stays
-  on the page; the back and forward buttons show the chat of the URL
-  they return to."
+  "A click on a link to a chat (`a[data-chat]`, the sidebar rows) or to
+  a job (`a[data-job]`) stays on the page; the back and forward buttons
+  show the chat or the job of the URL they return to."
   []
   (js/document.addEventListener
    "click"
    (fn [^js event]
-     (when-let [^js link (some-> (.-target event) (.closest "a[data-chat]"))]
+     (when-let [^js link (some-> (.-target event) (.closest "a[data-chat], a[data-job]"))]
        (when (plain-click? event)
          (.preventDefault event)
-         (go! (.getAttribute link "data-chat"))))))
+         (if-let [job (.getAttribute link "data-job")]
+           (go-job! job)
+           (go! (.getAttribute link "data-chat")))))))
   (js/window.addEventListener
    "popstate"
    (fn [_]
-     (show! (chat-id-of js/location.pathname)))))
+     (if-let [job (job-id-of js/location.pathname)]
+       (show-job! job)
+       (show! (chat-id-of js/location.pathname))))))
 
 (defn url-alias
   "`[:ui/url {:ui/path \"/chat/<id>\"}]` in a frame: the page of the chat
@@ -435,7 +458,8 @@
 (def register
   "rchat's aliases, then pchat's composer, which replaces rchat's: the
   later registration of a kind wins; the theme choice; the URL of the
-  chat; and `:pchat/tabid` in a command, the id of this tab."
+  chat; the copy action; and `:pchat/tabid` in a command, the id of
+  this tab."
   (concat rchat/register
           [{:ui.alias/kind :ui/composer
             :ui.alias/fn composer}
@@ -443,6 +467,11 @@
             :ui.alias/fn theme-toggle}
            {:ui.alias/kind :ui/url
             :ui.alias/fn url-alias}
+           ;; `[:dom/copy text]`: the text to the clipboard, the
+           ;; endpoint of a job.
+           {:ui.action/kind :dom/copy
+            :ui.action/handler (fn [{:keys [action]}]
+                                 (some-> js/navigator .-clipboard (.writeText (str (second action)))))}
            {:ui.action-enricher/kind :pchat/tabid
             :ui.action-enricher/fn (fn [{:keys [ui.action/x]}]
                                      (when (= :pchat/tabid x)
@@ -452,4 +481,8 @@
   []
   (swap! state/store assoc :pchat/theme (stored-theme))
   (watch-chat-links!)
-  (rframes/init! {:register register}))
+  ;; The commands go to /command whatever the page's path: rframes
+  ;; posts them next to the page, which for a page opened at
+  ;; /chat/<id> or /job/<id> would be /chat/command, nothing.
+  (rframes/init! {:register register
+                  :ui/command-endpoint "/command"}))

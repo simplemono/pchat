@@ -1,0 +1,160 @@
+#!/usr/bin/env bb
+;; bin/job   the jobs of this workspace: a chat turned into something that
+;; runs by itself, with the copy of the chat's folder as its template, JOB.md
+;; as its prompt and a trigger. Run from inside a chat's folder.
+;;
+;;   bin/job create <name>              this chat's folder becomes the template of a new job
+;;   bin/job list                       the jobs
+;;   bin/job show <id>                  one job: prompt, schedule, endpoint, last run
+;;   bin/job prompt <id>  < JOB.md      the prompt of the job, from standard input
+;;   bin/job schedule <id> "<cron>"     when it runs: five fields, minute hour day month weekday, UTC
+;;   bin/job schedule <id> off          no schedule, the endpoint and Run now only
+;;   bin/job run <id>                   a run now
+;;   bin/job pause <id> | resume <id>
+;;   bin/job delete <id>                the job; its runs stay as chats
+;;
+;; Every run is a chat of its own, made from the template, with JOB.md and
+;; what triggered the run as its first message. A job has an endpoint,
+;; POST <this pchat>/jobs/<id>/run?token=…, which a service calls to start
+;; a run; the body of the call, JSON as a rule, reaches the agent as text.
+(require '[babashka.classpath :refer [add-classpath]]
+         '[babashka.fs :as fs]
+         '[babashka.http-client :as http]
+         '[clojure.string :as str])
+
+(add-classpath ".pchat/lib")
+(require '[pchat.jobs :as jobs])
+
+(defn fail
+  [message]
+  (println message)
+  (System/exit 1))
+
+(def chat-dir
+  (fs/absolutize (fs/path (System/getProperty "user.dir"))))
+
+(def workspace
+  (str (fs/parent (fs/parent chat-dir))))
+
+(def external-clock?
+  (= "external" (System/getenv "PCHAT_CLOCK")))
+
+(def base-url
+  (or (not-empty (System/getenv "PCHAT_PUBLIC_URL"))
+      (str "http://localhost:" (or (System/getenv "PORT") "8080"))))
+
+(defn job-or-fail
+  [id]
+  (or (jobs/read-job workspace id)
+      (fail (str "There is no job " id ". bin/job list shows them."))))
+
+(defn endpoint
+  [job]
+  (str base-url (jobs/endpoint-path job)))
+
+(defn schedule-note
+  "What the person or the owner of the machine has to do for a schedule
+  to fire on this machine."
+  [{:keys [schedule] :as job}]
+  (when schedule
+    (if external-clock?
+      (str "This machine sleeps between requests and does not keep time by itself: the schedule fires when its owner calls the endpoint at the time. "
+           "Register it there: search the connected services for a tool that registers a schedule for a URL (the job id " (:id job)
+           ", the cron line " (pr-str schedule) ", the URL " (endpoint job) ", the token " (:token job) "); without that tool, the person has to arrange the call.")
+      "pchat fires the schedule itself, every minute it checks what is due (UTC).")))
+
+(defn create!
+  [name]
+  (when (str/blank? name)
+    (fail "bin/job create <name>"))
+  (when-not (fs/exists? (fs/path chat-dir ".session"))
+    (fail "Run bin/job from inside a chat's folder: the folder becomes the template."))
+  (let [job (jobs/create! workspace {:name name :from (str chat-dir)})]
+    (println (str "Made the job " (:name job) " (" (:id job) ") with this chat's folder as its template."))
+    (println (str "Next: write its prompt with  bin/job prompt " (:id job) " <<'EOF' … EOF  (what to do each time, which template, what to publish where, what to leave alone), ask the person to review it on the job's page " (jobs/url (:id job)) ", then set the trigger: bin/job schedule " (:id job) " \"<cron>\", or give the person the endpoint: " (endpoint job)))))
+
+(defn show!
+  [id]
+  (let [{:keys [name state schedule failures last-run caps] :as job} (job-or-fail id)
+        prompt (jobs/prompt workspace id)]
+    (println (str name " (" id "): " (clojure.core/name state)
+                  (when schedule (str ", schedule " (pr-str schedule) ", next " (jobs/minute-text (jobs/next-run schedule (jobs/now-utc)))))
+                  ", caps $" (:cost-usd caps) " and " (:minutes caps) " minutes per run"
+                  (when (pos? (or failures 0)) (str ", " failures " failed in a row"))))
+    (println (str "Endpoint: " (endpoint job)))
+    (when last-run
+      (println (str "Last run: " (clojure.core/name (:state last-run)) " at " (str (java.time.Instant/ofEpochMilli (:at last-run))) ", chat " (:chat last-run))))
+    (println (if (str/blank? prompt) "Prompt: none yet (bin/job prompt <id> < JOB.md)." (str "Prompt:\n" prompt)))
+    (some-> (schedule-note job) println)))
+
+(defn list!
+  []
+  (let [jobs (jobs/all workspace)]
+    (if (empty? jobs)
+      (println "No jobs. bin/job create <name> turns this chat into one.")
+      (doseq [{:keys [id name state schedule last-run]} jobs]
+        (println (str id ": " name ", " (clojure.core/name state)
+                      (if schedule (str ", " (pr-str schedule)) ", no schedule")
+                      (when last-run (str ", last run " (clojure.core/name (:state last-run))))))))))
+
+(defn prompt!
+  [id]
+  (job-or-fail id)
+  (let [text (slurp *in*)]
+    (when (str/blank? text)
+      (fail "bin/job prompt <id> reads JOB.md from standard input."))
+    (jobs/set-prompt! workspace id text)
+    (println (str "The prompt of " id " is set, " (count (str/split-lines text)) " lines. The person reviews it on " (jobs/url id) "."))))
+
+(defn schedule!
+  [id cron]
+  (let [job (job-or-fail id)]
+    (cond
+      (= "off" cron)
+      (do (jobs/write-job! workspace (assoc job :schedule nil))
+          (println (str "No schedule for " id " anymore; the endpoint and Run now remain.")))
+
+      (not (jobs/valid-cron? cron))
+      (fail (str "Not a cron line: " (pr-str cron) ". Five fields: minute hour day month weekday, for example \"0 9 * * 1-5\" (weekdays at 9:00 UTC) or \"*/30 * * * *\" (every half hour)."))
+
+      :else
+      (let [job (jobs/write-job! workspace (assoc job :schedule cron))]
+        (println (str "The schedule of " id " is " (pr-str cron) ", next " (jobs/minute-text (jobs/next-run cron (jobs/now-utc))) " (UTC)."))
+        (println (str "Endpoint: " (endpoint job)))
+        (println (schedule-note job))))))
+
+(defn run!
+  [id]
+  (let [job (job-or-fail id)
+        response (http/post (str "http://localhost:" (or (System/getenv "PORT") "8080") (jobs/endpoint-path job))
+                            {:headers {"Content-Type" "application/json"}
+                             :body "{\"from\": \"bin/job\"}"
+                             :throw false
+                             :timeout 20000})]
+    (println (case (:status response)
+               202 (str "Started: " (:body response) ". The run is a chat of its own; the person sees it on " (jobs/url id) ".")
+               409 (str "Not started: " (:body response))
+               (str "pchat answered " (:status response) ": " (:body response))))))
+
+(defn set-state!
+  [id state]
+  (let [job (job-or-fail id)]
+    (jobs/write-job! workspace (assoc job :state state :failures 0))
+    (println (str (:name job) " is " (name state) "."))))
+
+(def usage
+  "bin/job create <name> | list | show <id> | prompt <id> | schedule <id> \"<cron>\"|off | run <id> | pause <id> | resume <id> | delete <id>")
+
+(let [[command id & args] *command-line-args*]
+  (case command
+    (nil "help" "--help" "-h") (println usage)
+    "create" (create! id)
+    "list" (list!)
+    "show" (if (str/blank? id) (fail "bin/job show <id>") (show! id))
+    "prompt" (if (str/blank? id) (fail "bin/job prompt <id> < JOB.md") (prompt! id))
+    "schedule" (if (or (str/blank? id) (str/blank? (first args))) (fail "bin/job schedule <id> \"<cron>\" | off") (schedule! id (first args)))
+    "run" (if (str/blank? id) (fail "bin/job run <id>") (run! id))
+    "pause" (if (str/blank? id) (fail "bin/job pause <id>") (set-state! id :paused))
+    "resume" (if (str/blank? id) (fail "bin/job resume <id>") (set-state! id :active))
+    "delete" (if (str/blank? id) (fail "bin/job delete <id>") (do (job-or-fail id) (jobs/delete! workspace id) (println (str "Deleted the job " id "; its runs stay as chats."))))
+    (fail usage)))

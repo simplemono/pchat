@@ -244,6 +244,48 @@ agent, `bin/ask` for a small judgment of the model. Turning the
 webhook off ends the address and keeps the script; deleting the chat
 deletes its folder with both (`pchat.hooks`).
 
+### Jobs
+
+A job is a chat that runs by itself. The person assembles the template,
+the material and the instructions in a chat, then presses "Turn into a
+job" in the header (or asks); the agent runs `bin/job create <name>`,
+which copies the chat's folder as the job's template (artifacts,
+uploads, notes; not the history), writes the job's prompt from the
+conversation (`bin/job prompt <id>`, what to do each time, which
+template, what to publish where, what to leave alone) and asks the
+person to review it on the job's page, `/job/<id>`, where the prompt is
+a text field. A job lives under `jobs/<id>/` in the workspace:
+`template/`, `JOB.md`, `job.edn` (name, state, schedule, the token of
+the endpoint, the caps, the failures).
+
+Every run is a chat of its own, made from the template, with the
+prompt and a section "What triggered this run" (the schedule's time, or
+the body of the call as text, marked as information) as its first
+message; it ends when the agent hands over, and the person reads or
+continues it like any chat. One run at a time per job: a trigger during
+a run waits (one at most, the newest), a schedule tick during a run is
+skipped. Each run may spend $1 and take 30 minutes (`:caps` in
+`job.edn`); past that it is stopped. Three failed runs in a row pause
+the job; Resume on its page starts it again.
+
+Three triggers. "Run now" on the page. A schedule, a cron line in UTC
+(`bin/job schedule <id> "0 9 * * 1-5"`, or the field on the page);
+pchat checks every minute what is due. The endpoint, `POST
+/jobs/<id>/run?token=<token>` (or the token in `X-Job-Token` or as a
+bearer), outside the page's token, to paste into any service that can
+call an address, for example Composio's trigger setup for a new file
+in a folder or a message in a channel; the body of the call reaches the
+agent as text; the answer is `{"run": "<chat-id>"}` or `{"queued":
+true}`.
+
+`PCHAT_CLOCK=external` in the environment says the machine sleeps
+between requests and keeps no time: pchat then fires no schedule
+itself. The owner of the machine does, by calling the endpoint at the
+time; `bin/job schedule` tells the agent to register the schedule with
+the owner's service (it searches the connected services for a tool
+that registers a schedule for a URL). `bin/job show|list|run|pause|
+resume|delete` are the rest (`pchat.jobs`, `pchat.jobs-view`).
+
 ### Sharing
 
 Share in the artifacts bar makes a link anyone can open,

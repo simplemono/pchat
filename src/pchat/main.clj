@@ -27,6 +27,7 @@
             [pchat.chat :as chat]
             [pchat.chats :as chats]
             [pchat.hooks :as hooks]
+            [pchat.jobs :as jobs]
             [pchat.i18n :as i18n]
             [pchat.looks :as looks]
             [pchat.mcp :as mcp]
@@ -182,14 +183,16 @@
    "bin/voice"
    "bin/ask"
    "bin/mcp"
-   "bin/migrate-chats"])
+   "bin/migrate-chats"
+   "bin/job"])
 
 (def lib-files
   "Namespaces of pchat the scripts load from .pchat/lib: `bin/mcp` edits
   the connections with the same code as the page, `bin/migrate-chats`
-  makes chat folders the way the page does."
+  makes chat folders the way the page does, `bin/job` the jobs."
   ["mcp.clj"
-   "chats.clj"])
+   "chats.clj"
+   "jobs.clj"])
 
 (def retired-files
   "Scripts earlier builds installed that are gone: the kinetic engine is a
@@ -248,7 +251,7 @@
   "What the sidebar needs of a chat, from its folder: its session file
   when it has one, the name and the task the person gave it."
   [id]
-  (let [{:keys [name task]} (chats/meta chats-dir id)
+  (let [{:keys [name task run]} (chats/meta chats-dir id)
         file (first (session/files (chats/session-dir chats-dir id)))
         made (.lastModified (chats/dir chats-dir id))]
     (-> (merge chat/empty-chat
@@ -257,7 +260,9 @@
                (when file
                  (session/summary file))
                (when name {:name name})
-               (when task {:task task}))
+               (when task {:task task})
+               ;; A run of a job (see `pchat.jobs`).
+               (when run {:run run}))
         (assoc :id id))))
 
 (defn- new!
@@ -297,6 +302,8 @@
       (let [loaded (session/load-chat (io/file file) #(intern-message id %))]
         (swap! db update-in [:chats id] merge (dissoc loaded :name) {:loaded? true})))))
 
+(declare jobs)
+
 (defn- on-event
   [id event]
   (if (= "exited" (:type event))
@@ -311,10 +318,14 @@
                       (update-in [:chats id] chat/event event)
                       (assoc-in [:chats id :updated] (now)))
                   db))))
+  ;; A run of a job ends when its agent settles, fails or spends past
+  ;; the cap.
+  (jobs/on-event! jobs id event)
   ;; A tool just ran: what it wrote is on screen right away, the poll
-  ;; catches the rest.
+  ;; catches the rest; `bin/job` may have made or changed a job.
   (when (#{"tool_execution_end" "agent_settled"} (:type event))
-    (artifacts/refresh! artifacts id))
+    (artifacts/refresh! artifacts id)
+    (jobs/load! jobs))
   ;; The connections changed while the agent worked: its process ends
   ;; now that it is done, the next message starts one that has them.
   (when (and (= "agent_settled" (:type event))
@@ -469,6 +480,19 @@
         streaming? (= :working (get-in @db [:chats id :status]))]
     (pi/prompt! p text streaming? images)))
 
+(def jobs
+  "The jobs (see `pchat.jobs`): a run is a chat made here, its first
+  message sent like any other; `PCHAT_CLOCK=external` says the machine
+  sleeps between requests and its owner fires the schedules by calling
+  the endpoints."
+  (jobs/handle {:db db
+                :workspace workspace
+                :chats-dir chats-dir
+                :clock (if (= "external" (System/getenv "PCHAT_CLOCK")) :external :internal)
+                :add-chat! (fn [id] (swap! db assoc-in [:chats id] (new-chat id)))
+                :send! (fn [id text] (send! id text nil))
+                :abort! (fn [id] (when-let [p (get @pis id)] (pi/abort! p)))}))
+
 (defn- keep!
   "The message of a chat whose agent is not there yet: kept in the
   chat with the answer that says so, nothing is sent. Its clips show as
@@ -550,8 +574,8 @@
     (if (str/blank? tab)
       (command/rejected w (say w [:i18n :command/no-such-tab]))
       (do (if (get-in @db [:chats id])
-            (swap! db #(-> % (assoc-in [:tabs tab] id) (dissoc :deleting :hook-open :settings-open)))
-            (swap! db update :tabs dissoc tab))
+            (swap! db #(-> % (assoc-in [:tabs tab] id) (update :job-tabs dissoc tab) (dissoc :deleting :hook-open :settings-open)))
+            (swap! db #(-> % (update :tabs dissoc tab) (update :job-tabs dissoc tab))))
           (command/accepted w)))))
 
 (defn- new-command
@@ -562,7 +586,7 @@
     (if (str/blank? tab)
       (command/rejected w (say w [:i18n :command/no-such-tab]))
       (let [id (new!)]
-        (swap! db assoc-in [:tabs tab] id)
+        (swap! db #(-> % (assoc-in [:tabs tab] id) (update :job-tabs dissoc tab)))
         (command/accepted w)))))
 
 (defn- known-task
@@ -863,6 +887,126 @@
           (command/accepted w))
       (command/rejected w (say w [:i18n :command/no-such-chat])))))
 
+(defn- job-show-command
+  "The tab shows the job's page from now on."
+  [w]
+  (let [{:keys [id tab]} (command/command-data w)
+        tab (str tab)]
+    (cond
+      (str/blank? tab) (command/rejected w (say w [:i18n :command/no-such-tab]))
+      (not (jobs/job jobs id)) (command/rejected w (say w [:i18n :command/no-such-job]))
+      :else (do (swap! db #(-> %
+                               (assoc-in [:job-tabs tab] id)
+                               (update :tabs dissoc tab)
+                               (dissoc :deleting :deleting-job :hook-open :settings-open)))
+                (command/accepted w)))))
+
+(defn- job-turn-command
+  "The button in the header: the agent is asked to turn the chat into a
+  job, in the language of the page; it knows the steps from its prompt."
+  [w]
+  (let [{:keys [id]} (command/command-data w)
+        message (say w [:i18n :job/turn-message])]
+    (cond
+      (not (get-in @db [:chats id]))
+      (command/rejected w (say w [:i18n :command/no-such-chat]))
+
+      (not (setup/ready? (setup/refresh! setup)))
+      (do (keep! id message [] (setup/not-ready-message (:pi (:setup @db))))
+          (command/accepted w))
+
+      :else
+      (do (send! id message nil)
+          (command/accepted w)))))
+
+(defn- job-run-command
+  [w]
+  (let [{:keys [id]} (command/command-data w)
+        {:keys [error]} (jobs/start! jobs id {:kind :manual :at (now)})]
+    (case error
+      :no-such-job (command/rejected w (say w [:i18n :command/no-such-job]))
+      :paused (command/rejected w (say w [:i18n :command/job-paused]))
+      (command/accepted w))))
+
+(defn- job-state-command
+  "Pause or resume; resuming forgets the failures."
+  [w state]
+  (let [{:keys [id]} (command/command-data w)]
+    (if-let [job (jobs/job jobs id)]
+      (do (jobs/write! jobs (assoc job :state state :failures 0))
+          (command/accepted w))
+      (command/rejected w (say w [:i18n :command/no-such-job])))))
+
+(defn- job-prompt-command
+  "The prompt as the person edited it on the job's page."
+  [w]
+  (let [{:keys [id text]} (command/command-data w)]
+    (if (jobs/job jobs id)
+      (do (jobs/set-prompt! workspace id (str text))
+          (jobs/load! jobs)
+          (command/accepted w))
+      (command/rejected w (say w [:i18n :command/no-such-job])))))
+
+(defn- job-schedule-command
+  "The cron line from the job's page; empty is no schedule."
+  [w]
+  (let [{:keys [id cron]} (command/command-data w)
+        cron (str/trim (str cron))
+        job (jobs/job jobs id)]
+    (cond
+      (nil? job) (command/rejected w (say w [:i18n :command/no-such-job]))
+      (str/blank? cron) (do (jobs/write! jobs (assoc job :schedule nil))
+                            (swap! db update :jobs/error dissoc id)
+                            (command/accepted w))
+      (not (jobs/valid-cron? cron)) (do (swap! db assoc-in [:jobs/error id] [:i18n :job/schedule-bad])
+                                        (command/accepted w))
+      :else (do (jobs/write! jobs (assoc job :schedule cron))
+                (swap! db update :jobs/error dissoc id)
+                (command/accepted w)))))
+
+(defn- job-delete-command
+  "The first call arms the deletion, the second deletes the job; its
+  runs stay as chats."
+  [w]
+  (let [{:keys [id]} (command/command-data w)]
+    (cond
+      (not (jobs/job jobs id)) (command/rejected w (say w [:i18n :command/no-such-job]))
+      (= id (:deleting-job @db)) (do (jobs/delete! workspace id)
+                                     (swap! db (fn [db]
+                                                 (-> db
+                                                     (update :jobs dissoc id)
+                                                     (update :job-tabs #(into {} (remove (fn [[_ job]] (= job id))) %))
+                                                     (dissoc :deleting-job))))
+                                     (command/accepted w))
+      :else (do (swap! db assoc :deleting-job id) (command/accepted w)))))
+
+(defn- job-keep-command
+  [w]
+  (swap! db dissoc :deleting-job)
+  (command/accepted w))
+
+(defn- url-job-id
+  "The job id in the path of the page, `/job/<id>`, or nil."
+  [w]
+  (let [uri (str (get-in w [:ring/request :uri]))]
+    (when (str/starts-with? uri "/job/")
+      (let [id (first (str/split (subs uri 5) #"/"))]
+        (when (chats/valid-id? id)
+          id)))))
+
+(defn- shown-job
+  "The job a connection shows, when it shows one: the one its tab
+  picked since (`:job/show`), else, for a tab that picked no chat
+  either, the one of its URL."
+  [db w]
+  (let [tab (:tabid w)
+        wanted (cond
+                 (contains? (:job-tabs db) tab) (get-in db [:job-tabs tab])
+                 (contains? (:tabs db) tab) nil
+                 :else (url-job-id w))]
+    (when (get-in db [:jobs wanted])
+      wanted)))
+
 (defn- url-chat-id
   "The chat id in the path of the page, `/chat/<id>`, or nil."
   [w]
@@ -893,8 +1037,16 @@
     (let [value @db
           chat (get-in value [:chats id])
           locale (i18n/locale (:ring/request w))
-          base-url (share/base-url (:ring/request w))]
+          base-url (share/base-url (:ring/request w))
+          job-id (shown-job value w)]
       (-> (view/page value {:id id
+                            :job (when job-id
+                                   {:job (get-in value [:jobs job-id])
+                                    :runs (jobs/runs-of jobs job-id)
+                                    :endpoint (str base-url (jobs/endpoint-path (get-in value [:jobs job-id])))
+                                    :clock (:clock jobs)
+                                    :error (get-in value [:jobs/error job-id])
+                                    :deleting (:deleting-job value)})
                             :note (when missing [:i18n :chat/missing])
                             :key-missing? key-missing?
                             :locale locale
@@ -1014,6 +1166,27 @@
       :else
       (not-found w))))
 
+(def job-stream
+  "The view stream of a job's page, POST /job/<id>."
+  (:ring/handler (replicant/expand-entry {:replicant/render "/job/*"
+                                          :render/fn #'page-view})))
+
+(defn- job-get
+  "GET /job/<id>: the page."
+  [w]
+  (if (url-job-id w)
+    (assoc w :ring/response {:status 200
+                             :headers {"Content-Type" "text/html; charset=utf-8"
+                                       "Cache-Control" "no-cache"}
+                             :body (replicant/shim-html head)})
+    (not-found w)))
+
+(defn- job-post
+  [w]
+  (if (url-job-id w)
+    (job-stream w)
+    (not-found w)))
+
 (def register
   [(http/resources "/rchat.css" "pchat/chat.css")
    (http/resources "/pchat.css" "pchat/pchat.css")
@@ -1030,6 +1203,28 @@
     :ring/handler #'chat-post}
    {:ring/route [:get "/task/*"]
     :ring/handler #'task-link}
+   {:ring/route [:get "/job/*"]
+    :ring/handler #'job-get}
+   {:ring/route [:post "/job/*"]
+    :ring/handler #'job-post}
+   {:command/kind :job/show
+    :command/fn #'job-show-command}
+   {:command/kind :job/turn
+    :command/fn #'job-turn-command}
+   {:command/kind :job/run
+    :command/fn #'job-run-command}
+   {:command/kind :job/pause
+    :command/fn (fn [w] (job-state-command w :paused))}
+   {:command/kind :job/resume
+    :command/fn (fn [w] (job-state-command w :active))}
+   {:command/kind :job/prompt
+    :command/fn #'job-prompt-command}
+   {:command/kind :job/schedule
+    :command/fn #'job-schedule-command}
+   {:command/kind :job/delete
+    :command/fn #'job-delete-command}
+   {:command/kind :job/keep
+    :command/fn #'job-keep-command}
    {:command/kind :chat/send
     :command/fn #'send-command}
    {:command/kind :update/start
@@ -1094,10 +1289,11 @@
                             (setup/register setup))))
 
 (def open-register
-  "The routes outside the token: a share link and a webhook address are
-  their own keys."
+  "The routes outside the token: a share link, a webhook address and the
+  endpoint of a job are their own keys."
   (concat (share/register shares)
-          (hooks/register hooks)))
+          (hooks/register hooks)
+          (jobs/register jobs)))
 
 (defn handler
   "The ring handler: the open routes as they are, everything else
@@ -1140,6 +1336,7 @@
   (install-workspace!)
   (swap! db assoc :skills (skills/load-all (skills/checkout)))
   (load-chats!)
+  (jobs/load! jobs)
   (mcp/load! connections)
   (migrate/check! migration)
   (poll-artifacts!)
@@ -1148,6 +1345,7 @@
   (watch-connections!)
   (setup/watch! setup)
   (update/watch! updater)
+  (jobs/watch! jobs)
   (.addShutdownHook (Runtime/getRuntime) (Thread. #(do (projects/stop-all! projects)
                                                        (render/stop-all! renders)
                                                        (hooks/stop-all! hooks))))
@@ -1168,7 +1366,9 @@
                     (and token (System/getenv "PCHAT_JAR")) (str "http://localhost:" port " (the token is in the environment)")
                     token (auth/link (str "http://localhost:" port) token)
                     :else (str "http://localhost:" port))
-                  ", " (count (:chats @db)) " chats, the model is " provider "/" model
+                  ", " (count (:chats @db)) " chats, " (count (:jobs @db)) " jobs"
+                  (when (= :external (:clock jobs)) " (the schedules are fired from outside, PCHAT_CLOCK=external)")
+                  ", the model is " provider "/" model
                   ", the workspace " (.getCanonicalPath workspace)
                   (if nrepl-port (str ", nREPL on 127.0.0.1:" nrepl-port) ", no nREPL")
                   ", " (tools/report)

@@ -11,6 +11,8 @@
             [pchat.chat :as chat]
             [pchat.chats :as chats]
             [pchat.genui :as genui]
+            [pchat.jobs :as jobs]
+            [pchat.jobs-view :as jobs-view]
             [pchat.skills :as skills]
             [rchat.feed :as feed]))
 
@@ -251,6 +253,13 @@
                                                        :command/data {:id id}}]]}}
      [:i18n :chat/delete]]))
 
+(defn- job-button
+  "Asks the agent to turn the chat into a job (see `pchat.jobs`)."
+  [{:keys [id]}]
+  [:button.link.job {:on {:click [[:data/command {:command/kind :job/turn
+                                                  :command/data {:id id}}]]}}
+   [:i18n :job/turn]])
+
 (defn- hook-button
   [{:keys [id hook]} hook-open]
   [:button.link.hook {:class (str (when hook "on") (when (= id hook-open) " open"))
@@ -487,6 +496,7 @@
       [:i18n :chat/ready])]
    (when (pos? cost)
      [:span.spend (format "$%.2f" cost)])
+   (job-button chat)
    (hook-button chat hook-open)
    (delete-controls chat deleting)])
 
@@ -535,9 +545,11 @@
   opens here."
   ([db]
    (sidebar db {}))
-  ([{:keys [chats settings-open update]} {:keys [id locale]}]
+  ([{:keys [chats jobs settings-open update]} {:keys [id locale] :as opts}]
   (let [shown id
-        chats (sort-by #(or (:updated %) 0) > (vals chats))]
+        shown-job (get-in opts [:job :job :id])
+        chats (sort-by #(or (:updated %) 0) > (vals chats))
+        jobs (sort-by #(or (:created %) 0) (vals jobs))]
     [:aside.sidebar
      [:div.brand "pchat"
       ;; The running version, so that a person sees what an update did.
@@ -562,6 +574,24 @@
           [:span.name (chat-name chat)]
           (when (= :working status)
             [:span.dot])]])]
+     ;; The jobs under the chats: name, state, the next run.
+     (when (seq jobs)
+       (list
+        [:div.jobs-heading [:i18n :job/heading]]
+        [:ul.jobs
+         (for [{:keys [id name state schedule next]} jobs]
+           [:li {:replicant/key id
+                 :class (when (= id shown-job) "current")}
+            [:a.row {:href (jobs/url id)
+                     :data-job id}
+             [:span.name name]
+             [:span.meta
+              (jobs-view/state-label state)
+              (when (= :active state)
+                (list ", "
+                      (if (and schedule next)
+                        [:i18n :job/next {:at next}]
+                        [:i18n :job/no-schedule])))]]])]))
      ;; The bottom of the sidebar: the settings, in place of the chat
      ;; when opened, and the languages.
      [:div.bottom
@@ -639,7 +669,7 @@
   `hook-panel`). A new chat shows the tasks to pick from first, when
   there are skills. `[:ui/url]` tells the browser the page of the chat
   shown, for the address bar."
-  [{:keys [chats deleting hook-open settings-open setup update migration] :as db} {:keys [id note locale] :as opts}]
+  [{:keys [chats deleting hook-open settings-open setup update migration] :as db} {:keys [id note locale job] :as opts}]
   (let [chat (get chats id)
         files (:artifacts/list chat)
         skill (skills/by-name (:skills db) (:task chat))
@@ -647,19 +677,26 @@
         card? (seq files)]
     [:div.pchat {:lang (some-> locale name)
                  :data-chat id}
-     [:ui/url {:ui/path (chats/url id)}]
+     [:ui/url {:ui/path (if job (jobs/url (get-in job [:job :id])) (chats/url id))}]
      ;; The drawer state on a phone, toggled by labels, never rendered
      ;; with :checked so that the person's choice survives a frame.
      [:input#nav.toggle {:type "checkbox"}]
      (sidebar db opts)
      [:label.backdrop {:for "nav"}]
-     (if settings-open
+     (cond
+       settings-open
        ;; Keyed apart from the chat: the two share no element.
        [:div.rchat.settings-open {:replicant/key "settings"}
         (setup-banner setup)
         (update-banner update)
         (migrate-banner migration)
         (settings-view db id)]
+
+       ;; The page of a job, see `pchat.jobs-view`.
+       job
+       (jobs-view/page job)
+
+       :else
        [:div.rchat {:replicant/key "chat"
                     :class (when card? "with-card")}
         (when card?
