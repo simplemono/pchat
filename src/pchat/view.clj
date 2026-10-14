@@ -462,10 +462,13 @@
   nothing. `:locale` in `opts` marks the language of the page."
   ([db]
    (sidebar db {}))
-  ([{:keys [chats current settings-open]} {:keys [locale]}]
+  ([{:keys [chats current settings-open update]} {:keys [locale]}]
   (let [chats (sort-by #(or (:updated %) 0) > (vals chats))]
     [:aside.sidebar
-     [:div.brand "pchat"]
+     [:div.brand "pchat"
+      ;; The running version, so that a person sees what an update did.
+      (when-let [version (:current update)]
+        [:span.version {:title "pchat version"} version])]
      [:label.new {:for "nav"
                   :role "button"
                   :on {:click [[:data/command {:command/kind :chat/new}]]}}

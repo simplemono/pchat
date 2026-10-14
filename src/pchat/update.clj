@@ -69,13 +69,17 @@
   whether the process may end now, :exit! what ends it}`; everything
   but `:db` has a default."
   [opts]
-  (merge {:latest-url (or (System/getenv "PCHAT_UPDATE_URL") latest-url)
-          :bb (or (System/getenv "BB") "bb")
-          :idle? (constantly true)
-          :exit! (fn [code] (System/exit code))
-          :current (current-version)
-          :jar (running-jar (System/getenv "PCHAT_JAR"))}
-         opts))
+  (let [handle (merge {:latest-url (or (System/getenv "PCHAT_UPDATE_URL") latest-url)
+                       :bb (or (System/getenv "BB") "bb")
+                       :idle? (constantly true)
+                       :exit! (fn [code] (System/exit code))
+                       :current (current-version)
+                       :jar (running-jar (System/getenv "PCHAT_JAR"))}
+                      opts)]
+    ;; The running version is on the page from the first frame on
+    ;; (the sidebar shows it next to the name), before any lookup.
+    (swap! (:db handle) assoc-in [:update :current] (:current handle))
+    handle))
 
 (defn version-of-location
   "The version in GitHub's redirect to a release:

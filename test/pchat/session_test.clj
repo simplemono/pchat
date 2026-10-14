@@ -51,4 +51,8 @@
         lis (filter #(and (vector? %) (= :li (first %))) (tree-seq coll? seq sidebar))]
     (is (= ["b" (:id a)] (map #(get-in % [1 :replicant/key]) lis)))
     (is (= "current working" (get-in (first lis) [1 :class])))
-    (is (some #{"New chat"} (filter string? (tree-seq coll? seq sidebar))))))
+    (is (some #{"New chat"} (filter string? (tree-seq coll? seq sidebar)))))
+  (testing "the running version stands next to the name once the updater noted it"
+    (let [strings (fn [db] (filter string? (tree-seq coll? seq (view/sidebar db))))]
+      (is (some #{"0.1.7"} (strings {:chats {} :update {:current "0.1.7"}})))
+      (is (not-any? #{"dev"} (strings {:chats {}})) "nothing without a version"))))

@@ -53,6 +53,13 @@
   padding: 2px 8px;
 }
 
+.pchat .sidebar .brand .version {
+  margin-left: 8px;
+  font-size: 0.75em;
+  font-weight: 400;
+  opacity: 0.6;
+}
+
 .pchat .sidebar .new {
   display: block;
   padding: 8px 12px;
