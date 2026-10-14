@@ -101,6 +101,20 @@
         (is (nil? (update/check! (update/handle {:db db :latest-url "http://127.0.0.1:1/releases/latest" :current "0.1.3" :jar (io/file "x.jar")}))))
         (is (= "0.1.4" (get-in @db [:update :available])))))))
 
+(deftest check-now-test
+  (with-stub [base _requests]
+    (testing "the lookup on request keeps its bookkeeping in the db"
+      (let [db (atom {})
+            handle (update/handle {:db db :latest-url (str base "/releases/latest") :current "0.1.3" :jar (io/file "x.jar")})]
+        (is (= "0.1.4" (update/check-now! handle)))
+        (is (= {:current "0.1.3" :available "0.1.4" :offered true :checking false :lookup :ok}
+               (dissoc (:update @db) :checked-at)))
+        (is (number? (get-in @db [:update :checked-at])))))
+    (testing "a failed lookup is noted as such"
+      (let [db (atom {})]
+        (is (nil? (update/check-now! (update/handle {:db db :latest-url "http://127.0.0.1:1/releases/latest" :current "0.1.3" :jar (io/file "x.jar")}))))
+        (is (= :failed (get-in @db [:update :lookup])))))))
+
 (deftest update-test
   (with-stub [base _requests]
     (let [dir (temp-dir)

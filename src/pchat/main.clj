@@ -665,6 +665,13 @@
   (update/update! updater)
   (command/accepted w))
 
+(defn- update-check-command
+  "The person asks for a lookup of the newest pchat right now
+  (Settings, Updates); the daily one keeps its rhythm."
+  [w]
+  (future (update/check-now! updater))
+  (command/accepted w))
+
 (defn- settings-open-command
   "The settings in place of the chat; the chat stays current."
   [w]
@@ -817,6 +824,8 @@
     :command/fn #'send-command}
    {:command/kind :update/start
     :command/fn #'update-start-command}
+   {:command/kind :update/check
+    :command/fn #'update-check-command}
    {:command/kind :chat/abort
     :command/fn #'abort-command}
    {:command/kind :chat/new

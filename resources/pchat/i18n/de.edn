@@ -131,6 +131,12 @@
  :update/waiting [:fn/str "pchat {{:version}} ist bereit; die Aktualisierung folgt, sobald die laufende Arbeit fertig ist."]
  :update/failed [:fn/str "Die Aktualisierung ist fehlgeschlagen: {{:error}}"]
  :update/retry "Noch einmal"
+ :updates/tab "Updates"
+ :updates/current [:fn/str "Du nutzt pchat {{:version}}."]
+ :updates/check "Nach Updates suchen"
+ :updates/checking "Suche …"
+ :updates/newest "Das ist die neueste Version."
+ :updates/lookup-failed "Die Suche ist fehlgeschlagen; versuche es gleich noch einmal."
 
  :command/nothing-to-send "Nichts zu senden."
  :command/no-such-chat "Diesen Chat gibt es nicht."

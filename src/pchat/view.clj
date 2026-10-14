@@ -377,6 +377,33 @@
                            :light [:i18n :theme/light]
                            :dark [:i18n :theme/dark]}}]])
 
+(defn- update-button
+  [label]
+  [:button.link {:on {:click [[:data/command {:command/kind :update/start}]]}} label])
+
+(defn updates-tab
+  "The Updates tab of the settings: the running version, a button that
+  looks the newest release up right now (`pchat.update/check-now!`,
+  the daily lookup keeps its rhythm), and what the lookup found: the
+  newer version with the Update button, the newest already, or that
+  the lookup failed."
+  [{:keys [current available offered checking checked-at lookup]}]
+  [:section.updates
+   [:p.explain [:i18n :updates/current {:version (or current "dev")}]]
+   [:p
+    [:button.link {:on {:click [[:data/command {:command/kind :update/check}]]}
+                   :disabled (boolean checking)}
+     [:i18n :updates/check]]]
+   (cond
+     checking [:p.result [:i18n :updates/checking]]
+     offered [:p.result
+              [:i18n :update/available {:version available}]
+              " "
+              (update-button [:i18n :update/button])]
+     (= :failed lookup) [:p.result.failed [:i18n :updates/lookup-failed]]
+     checked-at [:p.result [:i18n :updates/newest]]
+     :else nil)])
+
 (def tabs
   "The tabs of the settings, each with the view of the db it shows; the
   first one is the default. More follow here."
@@ -385,7 +412,10 @@
     :view (fn [db] (connections-tab (:connections db)))}
    {:id :appearance
     :label [:i18n :theme/tab]
-    :view (fn [_db] (appearance-tab))}])
+    :view (fn [_db] (appearance-tab))}
+   {:id :updates
+    :label [:i18n :updates/tab]
+    :view (fn [db] (updates-tab (:update db)))}])
 
 (defn settings-view
   "In place of the chat: a bar with the way back, the tabs, the one
@@ -530,10 +560,6 @@
     :failed [:div.banner.setup.failed [:i18n :setup/pi-failed {:lines (str/join " / " (:lines pi))}]]
     :missing [:div.banner.setup.failed [:i18n :setup/pi-missing]]
     nil))
-
-(defn- update-button
-  [label]
-  [:button.link {:on {:click [[:data/command {:command/kind :update/start}]]}} label])
 
 (defn update-banner
   "Above the chat when a newer pchat is there (see `pchat.update`): the

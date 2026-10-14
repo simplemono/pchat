@@ -86,4 +86,20 @@
       (is (= {:system "Like my device" :light "Light" :dark "Dark"} labels))
       (is (some #{"Appearance"} (filter string? (tree-seq coll? seq view))) "the tab is there")))
   (testing "Connections stays the first tab"
-    (is (= [:connections :appearance] (mapv :id view/tabs)))))
+    (is (= [:connections :appearance :updates] (mapv :id view/tabs)))))
+
+(deftest updates-tab-test
+  (let [strings (fn [db] (filter string? (tree-seq coll? seq (i18n/translate (view/settings-view (assoc db :settings-tab :updates :connections {})) :en))))]
+    (testing "the running version and the button, nothing found yet"
+      (let [s (strings {:update {:current "0.1.10"}})]
+        (is (some #{"You run pchat 0.1.10."} s))
+        (is (some #{"Check for updates"} s))
+        (is (not-any? #{"This is the newest version."} s))))
+    (testing "a lookup that found nothing newer"
+      (is (some #{"This is the newest version."} (strings {:update {:current "0.1.10" :checked-at 1 :lookup :ok :offered false}}))))
+    (testing "a newer version comes with the Update button"
+      (let [s (strings {:update {:current "0.1.10" :available "0.1.11" :offered true :checked-at 1 :lookup :ok}})]
+        (is (some #{"pchat 0.1.11 is available."} s))
+        (is (some #{"Update"} s))))
+    (testing "a failed lookup says so"
+      (is (some #{"The lookup failed; try again in a moment."} (strings {:update {:current "0.1.10" :checked-at 1 :lookup :failed}}))))))

@@ -133,6 +133,12 @@
  :update/waiting [:fn/str "pchat {{:version}} is ready; updating when the current work is done."]
  :update/failed [:fn/str "The update failed: {{:error}}"]
  :update/retry "Try again"
+ :updates/tab "Updates"
+ :updates/current [:fn/str "You run pchat {{:version}}."]
+ :updates/check "Check for updates"
+ :updates/checking "Checking …"
+ :updates/newest "This is the newest version."
+ :updates/lookup-failed "The lookup failed; try again in a moment."
 
  :command/nothing-to-send "Nothing to send."
  :command/no-such-chat "No such chat."

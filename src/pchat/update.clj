@@ -119,6 +119,20 @@
                             :offered (boolean (and jar (newer? found current)))))))
     found))
 
+(defn check-now!
+  "The person asks for a lookup right now (Settings): `check!` with
+  its bookkeeping in the db, `:checking` while it runs, then
+  `:checked-at` (millis) and `:lookup`, `:ok` or `:failed`. Answers
+  what `check!` answers."
+  [{:keys [db] :as handle}]
+  (swap! db update :update assoc :checking true)
+  (let [found (check! handle)]
+    (swap! db update :update assoc
+           :checking false
+           :checked-at (System/currentTimeMillis)
+           :lookup (if found :ok :failed))
+    found))
+
 (defn- check-run
   "Runs the downloaded jar once with `--version`; nil when it answers
   `version`, else what went wrong."

@@ -1009,3 +1009,12 @@ html.theme-dark {
   font-size: 12px;
   white-space: nowrap;
 }
+
+.pchat .rchat .settings .updates .result {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.pchat .rchat .settings .updates .result.failed {
+  color: var(--rchat-warn);
+}
