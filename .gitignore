@@ -8,3 +8,4 @@ resources/public/js/
 workspace/
 .env
 .env.local
+resources/pchat/version.txt

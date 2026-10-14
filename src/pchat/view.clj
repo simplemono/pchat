@@ -513,11 +513,32 @@
     :missing [:div.banner.setup.failed [:i18n :setup/pi-missing]]
     nil))
 
+(defn- update-button
+  [label]
+  [:button.link {:on {:click [[:data/command {:command/kind :update/start}]]}} label])
+
+(defn update-banner
+  "Above the chat when a newer pchat is there (see `pchat.update`): the
+  version and the button, then what the update is doing."
+  [{:keys [offered available state error]}]
+  (when offered
+    (case state
+      :downloading [:div.banner.update [:i18n :update/downloading {:version available}]]
+      :ready [:div.banner.update [:i18n :update/waiting {:version available}]]
+      :failed [:div.banner.update.failed
+               [:i18n :update/failed {:error (str error)}]
+               " "
+               (update-button [:i18n :update/retry])]
+      [:div.banner.update
+       [:i18n :update/available {:version available}]
+       " "
+       (update-button [:i18n :update/button])])))
+
 (defn page
   "`opts`: `:key-missing?`, `:locale` (the language of the page, see
   `pchat.i18n`) and `:project` (see `pchat.artifacts/view`). A new chat
   shows the tasks to pick from first, when there are skills."
-  [{:keys [chats current deleting hook-open settings-open setup] files :artifacts/list :as db} {:keys [locale] :as opts}]
+  [{:keys [chats current deleting hook-open settings-open setup update] files :artifacts/list :as db} {:keys [locale] :as opts}]
   (let [chat (get chats current)
         skill (skills/by-name (:skills db) (:task chat))
         picking? (and (seq (:skills db)) (nil? (:task chat)) (empty? (:items chat)))
@@ -532,6 +553,7 @@
        ;; Keyed apart from the chat: the two share no element.
        [:div.rchat.settings-open {:replicant/key "settings"}
         (setup-banner setup)
+        (update-banner update)
         (settings-view db)]
        [:div.rchat {:replicant/key "chat"
                     :class (when card? "with-card")}
@@ -540,6 +562,7 @@
            [:input#view-chat.toggle {:type "radio" :name "view" :default-checked "true"}]
            [:input#view-made.toggle {:type "radio" :name "view"}]))
         (setup-banner setup)
+        (update-banner update)
         (header chat {:deleting deleting
                       :hook-open hook-open
                       :task (some-> skill (skills/text :title locale))})

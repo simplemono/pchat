@@ -23,7 +23,9 @@
 
 (defn handle
   "`{:db atom, :env the agent's environment, :markers-dir where an
-  install leaves its marker files (`~/.local`)}`."
+  install leaves its marker files (`~/.local`), :extra a function of
+  no arguments answering more fields for `GET /api/setup`, such as the
+  version and whether the process idles}`."
   [opts]
   (update opts :markers-dir #(or % (io/file (System/getProperty "user.home") ".local"))))
 
@@ -104,15 +106,17 @@
           (recur))))))
 
 (defn api-handler
-  "GET /api/setup: `{\"pi\": \"ready\", \"video-tools\": \"installing\"}`,
-  read from the machine on every call."
-  [handle w]
+  "GET /api/setup: `{\"pi\": \"ready\", \"video-tools\": \"installing\",
+  \"version\": \"0.1.4\", \"idle\": true}`, read from the machine on
+  every call; the fields after the tools come from `:extra`."
+  [{:keys [extra] :as handle} w]
   (let [found (refresh! handle)]
     (assoc w :ring/response
            {:status 200
             :headers {"Content-Type" "application/json; charset=utf-8"}
-            :body (json/generate-string {:pi (name (get-in found [:pi :state]))
-                                         :video-tools (name (get-in found [:video-tools :state]))})})))
+            :body (json/generate-string (merge {:pi (name (get-in found [:pi :state]))
+                                                :video-tools (name (get-in found [:video-tools :state]))}
+                                               (when extra (extra))))})))
 
 (defn register
   [handle]

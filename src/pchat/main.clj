@@ -31,6 +31,7 @@
             [pchat.render :as render]
             [pchat.session :as session]
             [pchat.setup :as setup]
+            [pchat.update :as update]
             [pchat.share :as share]
             [pchat.skills :as skills]
             [pchat.tools :as tools]
@@ -95,8 +96,19 @@
                   ;; not notice: the file stopped changing before.
                   :on-finish (fn [_name] (artifacts/refollow! artifacts))}))
 
+(defn- idle?
+  "No chat works and no video renders: the moment the process may end."
+  []
+  (and (every? #(= :idle (:status %)) (vals (:chats @db)))
+       (not (render/any-running? renders))))
+
+(def updater
+  (update/handle {:db db
+                  :idle? idle?}))
+
 (def setup
   (setup/handle {:db db
+                 :extra (fn [] {:version (:current updater) :idle (idle?)})
                  :env (tools/env)}))
 
 (def hooks
@@ -647,6 +659,12 @@
     (render/stop! renders path)
     (command/accepted w)))
 
+(defn- update-start-command
+  "The person takes the newer pchat: see `pchat.update`."
+  [w]
+  (update/update! updater)
+  (command/accepted w))
+
 (defn- settings-open-command
   "The settings in place of the chat; the chat stays current."
   [w]
@@ -785,6 +803,8 @@
     :ring/handler #'task-link}
    {:command/kind :chat/send
     :command/fn #'send-command}
+   {:command/kind :update/start
+    :command/fn #'update-start-command}
    {:command/kind :chat/abort
     :command/fn #'abort-command}
    {:command/kind :chat/new
@@ -864,7 +884,12 @@
         (secured request)))))
 
 (defn -main
-  [& _args]
+  [& args]
+  ;; `bb pchat.jar --version`: the version built in, nothing else; the
+  ;; check-run of an update relies on it.
+  (when (= "--version" (first args))
+    (println (update/current-version))
+    (System/exit 0))
   (.mkdirs sessions-dir)
   (.mkdirs (:dir artifacts))
   (.mkdirs looks-dir)
@@ -882,6 +907,7 @@
   (reap-idle-pis!)
   (watch-connections!)
   (setup/watch! setup)
+  (update/watch! updater)
   (.addShutdownHook (Runtime/getRuntime) (Thread. #(do (projects/stop-all! projects)
                                                        (render/stop-all! renders)
                                                        (hooks/stop-all! hooks))))

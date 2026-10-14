@@ -121,6 +121,13 @@
  :setup/pi-failed [:fn/str "Your assistant could not be set up: {{:lines}}"]
  :setup/pi-missing "The assistant (pi) is not installed on this machine."
 
+ :update/available [:fn/str "pchat {{:version}} is available."]
+ :update/button "Update"
+ :update/downloading [:fn/str "Downloading pchat {{:version}} …"]
+ :update/waiting [:fn/str "pchat {{:version}} is ready; updating when the current work is done."]
+ :update/failed [:fn/str "The update failed: {{:error}}"]
+ :update/retry "Try again"
+
  :command/nothing-to-send "Nothing to send."
  :command/no-such-chat "No such chat."
  :command/no-such-artifact "No such artifact."

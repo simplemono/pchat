@@ -73,6 +73,11 @@
   (when-let [{:keys [process]} (get @procs name)]
     (.isAlive (:proc process))))
 
+(defn any-running?
+  "Whether a render is on its way."
+  [{:keys [procs]}]
+  (boolean (some (fn [{:keys [process]}] (.isAlive (:proc process))) (vals @procs))))
+
 (defn- read-lines!
   "Every line of the stream into `on-line`."
   [stream on-line]

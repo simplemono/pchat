@@ -70,10 +70,18 @@
    :task (shell {:extra-env (env-file) :continue true} "bb" "smoke.clj" (or (first *command-line-args*) ""))}
 
   jar
-  {:doc "The app and all its dependencies as target/pchat.jar, run with `bb target/pchat.jar`. Compiles the bundle first when stale."
+  {:doc "The app and all its dependencies as target/pchat.jar, run with `bb target/pchat.jar`. Compiles the bundle first when stale. The version goes in as resources/pchat/version.txt: PCHAT_VERSION, else the release tag (GITHUB_REF_NAME), else git describe."
    :task (do
            (when (stale?)
              (run 'build))
+           (spit "resources/pchat/version.txt"
+                 (str (or (System/getenv "PCHAT_VERSION")
+                          (some-> (System/getenv "GITHUB_REF_NAME") (str/replace (re-pattern "^v") ""))
+                          (-> (shell {:out :string :continue true} "git" "describe" "--tags" "--always" "--dirty")
+                              :out
+                              str/trim
+                              (str/replace (re-pattern "^v") "")))
+                      "\n"))
            (fs/create-dirs "target")
            (shell "bb" "uberjar" "target/pchat.jar" "-m" "pchat.main")
            (println (str "target/pchat.jar, " (quot (fs/size "target/pchat.jar") 1024) " kB")))}
