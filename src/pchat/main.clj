@@ -33,7 +33,7 @@
             [pchat.chats :as chats]
             [pchat.hooks :as hooks]
             [pchat.i18n :as i18n]
-            [pchat.jobs :as jobs]
+            [pchat.background :as background]
             [pchat.looks :as looks]
             [pchat.mcp :as mcp]
             [pchat.migrate :as migrate]
@@ -129,12 +129,12 @@
                   :on-finish (fn [id _name] (artifacts/refollow! artifacts id))}))
 
 (defn- idle?
-  "No chat works, no video renders and no job of `bin/background` runs:
+  "No chat works, no video renders and no task of `bin/background` runs:
   the moment the process may end."
   []
   (and (every? #(= :idle (:status %)) (vals (:chats @db)))
        (not (render/any-running? renders))
-       (not (jobs/running? chats-dir (keys (:chats @db))))))
+       (not (background/running? chats-dir (keys (:chats @db))))))
 
 (def updater
   (update/handle {:db db
@@ -542,18 +542,18 @@
       (do (send! id message images)
           (command/accepted w)))))
 
-(defn- watch-jobs!
-  "Every two seconds: a job of `bin/background` that has ended is told to
+(defn- watch-background!
+  "Every two seconds: a task of `bin/background` that has ended is told to
   its chat's agent, which goes on with what it started it for."
   []
   (future
     (loop []
       (Thread/sleep 2000)
       (try
-        (jobs/report-ended! chats-dir (keys (:chats @db)) (fn [id text] (send! id text [])) (now))
+        (background/report-ended! chats-dir (keys (:chats @db)) (fn [id text] (send! id text [])) (now))
         (catch Exception e
           (binding [*out* *err*]
-            (println "[jobs]" (str e)))))
+            (println "[background]" (str e)))))
       (recur))))
 
 (defn- abort-command
@@ -1176,7 +1176,7 @@
   (poll-artifacts!)
   (sync-projects!)
   (reap-idle-pis!)
-  (watch-jobs!)
+  (watch-background!)
   (watch-connections!)
   (setup/watch! setup)
   (update/watch! updater)
