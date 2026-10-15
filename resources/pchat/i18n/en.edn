@@ -124,14 +124,6 @@
  :command/no-such-job "No such job."
  :command/bad-zone "Not a time zone."
  :command/job-paused "The job is paused; Resume starts it again."
- :hook/button "Webhook"
- :hook/explain "A webhook is an address another service calls when something happened there; the call runs this chat's script. Tell the agent what should happen."
- :hook/create "Turn on"
- :hook/remove "Turn off"
- :hook/url-title "Paste this address into the service that should call it"
- :hook/runs [:fn/str "{{:count}} runs"]
- :hook/none "No runs yet"
- :hook/ran "Webhook ran"
 
  :settings/button "Settings"
  :settings/title "Settings"

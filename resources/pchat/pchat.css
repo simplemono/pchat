@@ -274,10 +274,6 @@ html.theme-dark {
   color: var(--pchat-danger);
 }
 
-.pchat .sidebar .chats li .actions .item.hook.on::after {
-  content: " \2713";
-}
-
 /* The row while a delete is armed, see pchat.view/delete-confirm. */
 .pchat .sidebar .chats li .confirm {
   display: flex;
@@ -348,52 +344,6 @@ html.theme-dark {
 .pchat .rchat .bar button.link:hover {
   color: var(--rchat-text);
   text-decoration: underline;
-}
-
-/* The webhook panel under the header, see pchat.hooks. */
-.pchat .rchat .hook-panel {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  padding: 8px 20px;
-  border-bottom: 1px solid var(--rchat-line);
-  background: var(--rchat-panel);
-  font-size: 13px;
-  color: var(--rchat-muted);
-}
-
-.pchat .rchat .hook-panel .explain {
-  flex: 1;
-  min-width: 200px;
-}
-
-.pchat .rchat .hook-panel input.hook-url {
-  flex: 1;
-  min-width: 200px;
-  padding: 4px 8px;
-  border: 1px solid var(--rchat-line);
-  border-radius: 6px;
-  background: var(--rchat-bg);
-  font: inherit;
-  font-size: 12px;
-  color: var(--rchat-text);
-  text-overflow: ellipsis;
-}
-
-.pchat .rchat .hook-panel button.link {
-  padding: 2px 6px;
-  border: 0;
-  background: none;
-  color: var(--rchat-muted);
-  font: inherit;
-  font-size: 13px;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.pchat .rchat .hook-panel button.link:hover {
-  color: var(--rchat-text);
 }
 
 /* The settings in place of the chat, opened from the bottom of the

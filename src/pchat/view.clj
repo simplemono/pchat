@@ -144,34 +144,6 @@
             (str/blank? text)
             (nil? error))))
 
-(defn- clock
-  "15:49 on 11 Oct, in the time of the server."
-  [ms]
-  (.format (java.time.format.DateTimeFormatter/ofPattern "HH:mm, d MMM")
-           (java.time.LocalDateTime/ofInstant (java.time.Instant/ofEpochMilli ms)
-                                              (java.time.ZoneId/systemDefault))))
-
-(defn- run-view
-  "A run of the webhook: when, how long, what it printed, what it made."
-  [id {:keys [n at exit seconds output made]}]
-  [:div.item.step.run {:replicant/key (str "run-" n)}
-   [:details.work {:class (when-not (zero? exit) "failed")}
-    [:summary [:i18n :hook/ran] " · " (clock at) " · " (str seconds " s")
-     (when-not (zero? exit) [:i18n :tool/failed])]
-    (when (seq output)
-      [:pre.output (feed/cut 2000 output)])
-    (when (seq made)
-      [:p.made
-       (for [path made]
-         [:button.link {:on {:click [[:data/command {:command/kind :artifacts/open
-                                                     :command/data {:id id
-                                                                    :path path}}]]}}
-          (artifacts/title path)])])]])
-
-(def shown-runs
-  "The last runs of the webhook under the chat."
-  10)
-
 (def attach-input-id
   "The id of the composer's file input: a label elsewhere on the page
   opens the file picker with it."
@@ -220,14 +192,13 @@
 (defn feed
   ([chat]
    (feed chat nil))
-  ([{:keys [id status runs] :as chat} intro]
+  ([{:keys [id status] :as chat} intro]
    [:section.feed {:data-stick-to-end "true"}
     intro
     (->> (with-handover chat)
          (map-indexed vector)
          (filter (fn [[_ item]] (shown? item)))
          (map (fn [[index item]] (item-view index item {:id id}))))
-    (map #(run-view id %) (take-last shown-runs runs))
     (when (= :working status)
       [:div.item.working {:replicant/key "working"}
        [:span.dot]
@@ -256,11 +227,11 @@
   "The menu behind the three dots of a sidebar row: what one can do with
   that chat, like the menu of a chat on claude.ai. A <details>, so the
   browser opens and closes it; the runtime (`pchat.client`) closes it
-  on a click elsewhere. The job (see `pchat.jobs`) and the webhook name
-  the tab, so that the job's page or the chat with its panel opens
-  here; a delete arms the question in the row. `:pchat/timezone` is the
-  browser's time zone, the job's from then on."
-  [{:keys [id hook]}]
+  on a click elsewhere. The job (see `pchat.jobs`) names the tab, so
+  that the job's page opens here; a delete arms the question in the
+  row. `:pchat/timezone` is the browser's time zone, the job's from then
+  on."
+  [{:keys [id]}]
   [:details.actions
    [:summary {:aria-label [:i18n :chat/actions]
               :title [:i18n :chat/actions]}
@@ -271,125 +242,9 @@
                                                                    :tab :pchat/tabid
                                                                    :tz :pchat/timezone}}]]}}
      [:i18n :job/turn]]
-    [:button.item.hook {:class (when hook "on")
-                        :on {:click [[:data/command {:command/kind :hook/toggle
-                                                     :command/data {:id id
-                                                                    :tab :pchat/tabid}}]]}}
-     [:i18n :hook/button]]
     [:button.item.danger {:on {:click [[:data/command {:command/kind :chat/delete
                                                        :command/data {:id id}}]]}}
      [:i18n :chat/delete]]]])
-
-(defn hook-panel
-  "Under the header when opened: the address of the webhook to paste
-  into the other service, how it went so far, on and off."
-  [{:keys [id hook runs] :as chat} {:keys [hook-url]}]
-  [:div.hook-panel
-   (if hook
-     (list
-      [:input.hook-url {:replicant/key (:secret hook)
-                        :value (when hook-url (hook-url chat))
-                        :readonly true
-                        :title [:i18n :hook/url-title]}]
-      [:span.runs (if (seq runs)
-                    [:i18n :hook/runs {:count (count runs)}]
-                    [:i18n :hook/none])]
-      [:button.link {:on {:click [[:data/command {:command/kind :hook/remove
-                                                  :command/data {:id id}}]]}}
-       [:i18n :hook/remove]])
-     (list
-      [:span.explain [:i18n :hook/explain]]
-      [:button.link {:on {:click [[:data/command {:command/kind :hook/create
-                                                  :command/data {:id id}}]]}}
-       [:i18n :hook/create]]))])
-
-(defn- connection-row
-  "One connection: what it is, how its last test went, and what can be
-  done with it. A secret is named, never shown."
-  [{:keys [name address enabled? secrets tools error testing?]}]
-  [:div.connection {:replicant/key name
-                    :class (when-not enabled? "off")}
-   [:div.about
-    [:span.name name]
-    [:span.address {:title address} address]
-    (for [secret secrets]
-      [:span.secret (str secret ": ••••")])]
-   [:span.state {:class (when error "error")
-                 :title (when (seq tools) (str/join ", " tools))}
-    (cond
-      testing? [:i18n :connections/testing]
-      (not enabled?) [:i18n :connections/off]
-      error error
-      tools [:i18n :connections/tools {:count (count tools)}]
-      :else [:i18n :connections/untested])]
-   [:div.actions
-    [:button.link {:on {:click [[:data/command {:command/kind :connections/test
-                                                :command/data {:name name}}]]}}
-     [:i18n :connections/test]]
-    [:button.link {:on {:click [[:data/command {:command/kind :connections/enable
-                                                :command/data {:name name
-                                                               :enabled? (not enabled?)}}]]}}
-     (if enabled? [:i18n :connections/turn-off] [:i18n :connections/turn-on])]
-    [:button.link.danger {:on {:click [[:data/command {:command/kind :connections/remove
-                                                       :command/data {:name name}}]]}}
-     [:i18n :connections/remove]]]])
-
-(defn- field
-  "A labelled field of a form, with a hint under it when there is one."
-  [label input & [hint]]
-  [:label.field
-   [:span.label label]
-   input
-   (when hint
-     [:small.hint hint])])
-
-(defn- connection-form
-  "Name, address or program, an access line, when the agent sees the
-  tools; keyed by the number of connections, so that a new one empties
-  the fields."
-  [connections]
-  [:div.box.add {:replicant/key (str "add-" (count connections))}
-   [:h2 [:i18n :connections/add-title]]
-   (field [:i18n :connections/name]
-          [:input {:placeholder [:i18n :connections/name-placeholder]
-                   :on {:input [[:store/assoc :pchat/connection-name :event/target.value]]}}])
-   (field [:i18n :connections/address]
-          [:input {:placeholder [:i18n :connections/address-placeholder]
-                   :on {:input [[:store/assoc :pchat/connection-address :event/target.value]]}}])
-   (field [:i18n :connections/secret]
-          [:input {:placeholder [:i18n :connections/secret-placeholder]
-                   :on {:input [[:store/assoc :pchat/connection-secret :event/target.value]]}}]
-          [:i18n :connections/secret-hint])
-   (field [:i18n :connections/exposure]
-          [:select {:on {:change [[:store/assoc :pchat/connection-exposure :event/target.value]]}}
-           [:option {:value "deferred" :selected true} [:i18n :connections/exposure-deferred]]
-           [:option {:value "direct"} [:i18n :connections/exposure-direct]]])
-   [:button.primary {:on {:click [[:data/command {:command/kind :connections/add
-                                                  :command/data {:name [:store/deref :pchat/connection-name]
-                                                                 :address [:store/deref :pchat/connection-address]
-                                                                 :secret [:store/deref :pchat/connection-secret]
-                                                                 :exposure [:store/deref :pchat/connection-exposure]}}
-                                   {:on-success [[:store/dissoc :pchat/connection-name]
-                                                 [:store/dissoc :pchat/connection-address]
-                                                 [:store/dissoc :pchat/connection-secret]]}]]}}
-    [:i18n :connections/add]]])
-
-(defn- agent-form
-  "The service named, the agent of the chat the tab shows finds out
-  the rest."
-  [id]
-  [:div.box.agent
-   [:h2 [:i18n :connections/agent-title]]
-   [:p [:i18n :connections/agent-explain]]
-   [:div.row
-    [:input {:placeholder [:i18n :connections/agent-placeholder]
-             :aria-label [:i18n :connections/agent-placeholder]
-             :on {:input [[:store/assoc :pchat/connection-service :event/target.value]]}}]
-    [:button {:on {:click [[:data/command {:command/kind :connections/agent
-                                           :command/data {:id id
-                                                          :service [:store/deref :pchat/connection-service]}}
-                            {:on-success [[:store/dissoc :pchat/connection-service]]}]]}}
-     [:i18n :connections/agent]]]])
 
 (defn connections-tab
   "The Connections tab of the settings: what a connection is, the
@@ -690,11 +545,10 @@
   "`opts`: `:id`, the chat this connection shows; `:note`, a line above
   the chat when it is not the one the URL named; `:key-missing?`;
   `:locale` (the language of the page, see `pchat.i18n`); `:project`
-  and `:share` (see `pchat.artifacts/view`); `:hook-url` (see
-  `hook-panel`). A new chat shows the tasks to pick from first, when
+  and `:share` (see `pchat.artifacts/view`). A new chat shows the tasks to pick from first, when
   there are skills. `[:ui/url]` tells the browser the page of the chat
   shown, for the address bar."
-  [{:keys [chats deleting hook-open settings-open setup update migration] :as db} {:keys [id note locale job] :as opts}]
+  [{:keys [chats deleting settings-open setup update migration] :as db} {:keys [id note locale job] :as opts}]
   (let [chat (get chats id)
         files (:artifacts/list chat)
         skill (skills/by-name (:skills db) (:task chat))
@@ -733,8 +587,6 @@
           [:div.banner.note note])
         (header chat {:task (some-> skill (skills/text :title locale))
                       :job (:job job)})
-        (when (and (not job?) (= id hook-open))
-          (hook-panel chat opts))
         (when card?
           (views (if job? [:i18n :job/view-job] [:i18n :page/view-made])))
         [:div.body

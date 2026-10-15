@@ -32,9 +32,11 @@ MIT. Storrito-specific parts are fine here, customer-specific ones are not.
 5. **Order:** pchat core first (pi, sidebar, chat with markdown and images,
    artifacts pane, token auth, sprite deploy), the first customer
    automation as its first chat afterwards.
-6. **Automations:** a webhook URL per chat on the VM. The webhook runs a
-   babashka script the agent developed in the chat: deterministic, no
-   model in the loop except small classification calls. The agent works
+6. **Automations:** a job per chat on the VM (see Jobs below): the
+   agent runs JOB.md on a schedule or when a service calls the job's
+   endpoint, a fresh chat each time. No scripts: a non-technical person
+   never sees one, and the model adapts to the edge cases a script
+   would not. The agent works
    only while developing or fixing.
 7. **Rendering and posting:** the video or image is rendered on the VM
    (headless Chrome and ffmpeg from the fnmotion artifact). The Storrito
@@ -90,8 +92,7 @@ workspace/
     tmp/                TMPDIR of the agent and its tools
     .session/           pi's session file, the history of the chat
     .chat.edn           the name the person gave the chat, its task
-    .hook.edn .runs.edn .shares.edn   the webhook, its runs, the share links
-    hook.clj hook.log   the webhook's script and its log
+    .shares.edn         the share links
     bin .pchat .pi      links to the shared ones above
 ```
 
@@ -127,7 +128,7 @@ every old session file becomes a chat with the file moved into its
 `uploads/`, the artifacts stamped for the chat in
 `.pchat/artifact-owners.edn` move into its `artifacts/` and every
 unstamped artifact into one chat named "Earlier artifacts"; names,
-tasks, webhooks and share links follow. The old folders stay, empty,
+tasks and share links follow. The old folders stay, empty,
 and `.pchat/migrated-at` marks the run; the banner says how many chats
 came back. By hand: `bb bin/migrate-chats` in the workspace.
 
@@ -231,25 +232,6 @@ through OpenRouter (about 7 cents), `--ratio 9:16` for a story, `--from
 speaks them with an ElevenLabs voice (a tenth of a cent a sentence),
 as a track of the design like music. `bin/ask "<question>" [text]` is
 one answer of the model for a small judgment inside a script.
-
-### Automations
-
-A chat has a webhook: the Webhook button in the header turns it on and
-shows the address, `/hook/<chat-id>/<secret>`, outside the token, to
-paste into the service that should call it (Zapier, a form, a
-calendar). A call runs `hook.clj` in the chat's folder with the
-body of the request on standard input, `PCHAT_HOOK_METHOD`,
-`PCHAT_HOOK_QUERY` and `PCHAT_HOOK_CONTENT_TYPE` in the environment,
-one run at a time per chat; the answer carries what the script
-printed when it is done within twenty-five seconds, else word that it
-goes on. Every run is a row under the chat with its output and the
-artifacts it made, and a block in `hook.log` beside the script for the
-agent, with the body the call brought. The agent knows the script
-from its prompt and writes it when the person wants
-something to happen by itself: plain babashka, the same scripts as the
-agent, `bin/ask` for a small judgment of the model. Turning the
-webhook off ends the address and keeps the script; deleting the chat
-deletes its folder with both (`pchat.hooks`).
 
 ### Jobs
 
@@ -455,9 +437,10 @@ the composer one line under the creation on a phone, `<html lang>` and
 the language of a rejection follow the page, EN/DE links in the
 sidebar, tests on GitHub Actions.
 
-Automations and the rest, 2026-10-11: a webhook per chat runs the
+Automations and the rest, 2026-10-11: a webhook per chat ran the
 script the agent wrote, its runs under the chat (`pchat.hooks`,
-`bin/ask`); `bin/image` and `bin/voice` beside `bin/music`; Stop
+removed 2026-10-15: a job does what it did, with the model in the loop;
+`bin/ask` stays); `bin/image` and `bin/voice` beside `bin/music`; Stop
 while a video renders; Share for a file; `bb smoke` runs the agent
 once for real and checks the video that came out.
 

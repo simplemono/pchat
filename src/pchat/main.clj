@@ -17,8 +17,7 @@
   chat is the value of `pchat.chat` plus :id, :name, :task (the name of
   its skill, :free, or nil while the person has not picked one),
   :created, :updated, :file and :loaded?, and what the other namespaces
-  keep in a chat: its artifacts, projects, renders, shares, hook and
-  runs. Every chat works in its own folder (`pchat.chats`); the list
+  keep in a chat: its artifacts, projects, renders and shares. Every chat works in its own folder (`pchat.chats`); the list
   comes from the folders, the history of a chat from its pi session
   file when it is first shown. Which chat a browser tab shows is the
   tab's: its URL, `/chat/<id>`, until a click in the sidebar names
@@ -31,7 +30,6 @@
             [pchat.artifacts :as artifacts]
             [pchat.chat :as chat]
             [pchat.chats :as chats]
-            [pchat.hooks :as hooks]
             [pchat.jobs :as jobs]
             [pchat.i18n :as i18n]
             [pchat.schedule :as schedule]
@@ -142,12 +140,6 @@
 (def setup
   (setup/handle {:db db
                  :extra (fn [] {:version (:current updater) :idle (idle?)})
-                 :env (tools/env)}))
-
-(def hooks
-  (hooks/handle {:db db
-                 :chats-dir chats-dir
-                 :bb bb
                  :env (tools/env)}))
 
 (def shares
@@ -280,7 +272,7 @@
     (swap! db (fn [db]
                 (-> db
                     (assoc-in [:chats id] (new-chat id))
-                    (dissoc :deleting :hook-open :settings-open))))
+                    (dissoc :deleting :settings-open))))
     id))
 
 (defn- load-chats!
@@ -295,7 +287,6 @@
                    (for [id ids
                          :when (not (get-in chats [id :loaded?]))]
                      [id (chat-summary id)]))))
-    (hooks/load! hooks)
     (share/load! shares)
     ;; The conversations of the jobs live on the jobs' pages, not in the list.
     (when (empty? (remove :job (vals (:chats @db))))
@@ -420,9 +411,8 @@
 (defn- system-prompt
   "system.md, the skills paragraph (the chat's task in full, see
   `pchat.skills/prompt`), the integrations paragraph when a connection
-  with Composio's connection tools exists (a Storrito agent's own), the
-  webhook paragraph, and for the conversation of a job the job
-  paragraph (job.md, see `pchat.jobs`)."
+  with Composio's connection tools exists (a Storrito agent's own), and
+  for the conversation of a job the job paragraph (job.md, see `pchat.jobs`)."
   [id]
   (str (slurp (io/resource "pchat/prompts/system.md"))
        (some->> (skills/prompt (:skills @db) (get-in @db [:chats id :task]))
@@ -430,7 +420,6 @@
        (when-let [names (seq (mcp/composio-connections connections))]
          (str "\n\n" (str/replace (slurp (io/resource "pchat/prompts/integrations.md"))
                                   "<connection>" (str/join ", " names))))
-       "\n\n" (hooks/prompt)
        (when-let [job (some->> (get-in @db [:chats id :job]) (jobs/job jobs))]
          (str "\n\n" (-> (slurp (io/resource "pchat/prompts/job.md"))
                          (str/replace "<id>" (str (:id job)))
@@ -588,7 +577,7 @@
     (if (str/blank? tab)
       (command/rejected w (say w [:i18n :command/no-such-tab]))
       (do (if (get-in @db [:chats id])
-            (swap! db #(-> % (assoc-in [:tabs tab] id) (update :job-tabs dissoc tab) (dissoc :deleting :hook-open :settings-open)))
+            (swap! db #(-> % (assoc-in [:tabs tab] id) (update :job-tabs dissoc tab) (dissoc :deleting :settings-open)))
             (swap! db #(-> % (update :tabs dissoc tab) (update :job-tabs dissoc tab))))
           (command/accepted w)))))
 
@@ -662,7 +651,7 @@
   (let [task (known-task (get-in w [:ring/route-params :*]))
         newest (newest-chat-id @db)
         id (if (and newest (unstarted? newest))
-             (do (swap! db dissoc :deleting :hook-open :settings-open)
+             (do (swap! db dissoc :deleting :settings-open)
                  newest)
              (new!))]
     (set-task! id task)
@@ -743,33 +732,6 @@
   [w]
   (let [{:keys [id path]} (command/command-data w)]
     (render/stop! renders id path)
-    (command/accepted w)))
-
-(defn- hook-toggle-command
-  "The webhook panel of the chat, shown or hidden. With a `:tab` (the
-  menu of a sidebar row names it), that tab shows the chat as well,
-  so that the panel is in view."
-  [w]
-  (let [{:keys [id tab]} (command/command-data w)
-        tab (str tab)]
-    (swap! db (fn [db]
-                (cond-> (if (= id (:hook-open db)) (dissoc db :hook-open) (assoc db :hook-open id))
-                  (and (seq tab) (get-in db [:chats id])) (assoc-in [:tabs tab] id))))
-    (command/accepted w)))
-
-(defn- hook-create-command
-  [w]
-  (let [{:keys [id]} (command/command-data w)]
-    (if (get-in @db [:chats id])
-      (do (hooks/create! hooks id)
-          (command/accepted w))
-      (command/rejected w (say w [:i18n :command/no-such-chat])))))
-
-(defn- hook-remove-command
-  [w]
-  (let [{:keys [id]} (command/command-data w)]
-    (when (get-in @db [:chats id])
-      (hooks/remove! hooks id))
     (command/accepted w)))
 
 (defn- share-command
@@ -923,7 +885,7 @@
               (swap! db #(-> %
                              (assoc-in [:job-tabs tab] id)
                              (assoc-in [:tabs tab] chat)
-                             (dissoc :deleting :deleting-job :hook-open :settings-open)))
+                             (dissoc :deleting :deleting-job :settings-open)))
               (command/accepted w)))))
 
 (defn- job-turn-command
@@ -955,7 +917,7 @@
         (swap! db #(-> %
                        (assoc-in [:job-tabs tab] (:id job))
                        (assoc-in [:tabs tab] cid)
-                       (dissoc :deleting :hook-open :settings-open)))
+                       (dissoc :deleting :settings-open)))
         (if (setup/ready? (setup/refresh! setup))
           (send! cid message nil)
           (keep! cid message [] (setup/not-ready-message (:pi (:setup @db)))))
@@ -1183,9 +1145,7 @@
                             :share (fn [path]
                                      (some->> (get-in chat [:shares path])
                                               (share/link base-url)))
-                            :hook-url (fn [{:keys [id hook]}]
-                                        (when hook
-                                          (hooks/url base-url id (:secret hook))))})
+})
           (i18n/translate locale)))))
 
 (def head
@@ -1412,12 +1372,6 @@
     :command/fn #'render-command}
    {:command/kind :artifacts/render-stop
     :command/fn #'render-stop-command}
-   {:command/kind :hook/toggle
-    :command/fn #'hook-toggle-command}
-   {:command/kind :hook/create
-    :command/fn #'hook-create-command}
-   {:command/kind :hook/remove
-    :command/fn #'hook-remove-command}
    {:command/kind :artifacts/share
     :command/fn #'share-command}
    {:command/kind :artifacts/unshare
@@ -1446,10 +1400,9 @@
                             (setup/register setup))))
 
 (def open-register
-  "The routes outside the token: a share link, a webhook address and the
-  endpoint of a job are their own keys."
+  "The routes outside the token: a share link and the endpoint of a job
+  are their own keys."
   (concat (share/register shares)
-          (hooks/register hooks)
           (jobs/register jobs)))
 
 (defn handler
@@ -1504,8 +1457,7 @@
   (update/watch! updater)
   (jobs/watch! jobs)
   (.addShutdownHook (Runtime/getRuntime) (Thread. #(do (projects/stop-all! projects)
-                                                       (render/stop-all! renders)
-                                                       (hooks/stop-all! hooks))))
+                                                       (render/stop-all! renders))))
   (sse/watch! db)
   (let [port (parse-long (or (env/get "PORT") "8080"))
         token (env/get "PCHAT_TOKEN")

@@ -122,14 +122,6 @@
  :command/no-such-job "Diesen Job gibt es nicht."
  :command/bad-zone "Das ist keine Zeitzone."
  :command/job-paused "Der Job ist pausiert; Fortsetzen startet ihn wieder."
- :hook/button "Webhook"
- :hook/explain "Ein Webhook ist eine Adresse, die ein anderer Dienst aufruft, wenn dort etwas passiert ist; der Aufruf führt das Skript dieses Chats aus. Sag dem Agenten, was dann passieren soll."
- :hook/create "Einschalten"
- :hook/remove "Ausschalten"
- :hook/url-title "Diese Adresse in den Dienst eintragen, der sie aufrufen soll"
- :hook/runs [:fn/str "{{:count}} Aufrufe"]
- :hook/none "Noch kein Aufruf"
- :hook/ran "Webhook aufgerufen"
 
  :settings/button "Einstellungen"
  :settings/title "Einstellungen"
