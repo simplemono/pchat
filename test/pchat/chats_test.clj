@@ -60,3 +60,23 @@
       (chats/delete! chats-dir "../bin")
       (is (.isDirectory (io/file chats-dir "notes")))
       (is (.isFile (io/file workspace "bin" "new"))))))
+
+(deftest tmp-path-test
+  (let [workspace (temp-dir)
+        chats-dir (io/file workspace "chats")
+        id (chats/new-id)
+        link (str (chats/tmp-link id))]
+    (spit (doto (io/file workspace "bin" "new") io/make-parents) "#!/bin/sh\n")
+    (chats/create! workspace id)
+    (testing "a short link to the chat's tmp/, short enough for a socket in it"
+      (is (= link (chats/tmp-path chats-dir id)))
+      (is (= (str (fs/absolutize (chats/tmp-dir chats-dir id))) (str (fs/read-link link))))
+      (is (< (count (str link "/com.google.Chrome.XXXXXX/SingletonSocket")) 107)))
+    (testing "a link that points elsewhere is mended"
+      (fs/delete link)
+      (fs/create-sym-link link (temp-dir))
+      (is (= link (chats/tmp-path chats-dir id)))
+      (is (= (str (fs/absolutize (chats/tmp-dir chats-dir id))) (str (fs/read-link link)))))
+    (testing "deleting the chat removes the link"
+      (chats/delete! chats-dir id)
+      (is (not (fs/exists? link {:nofollow-links true}))))))
