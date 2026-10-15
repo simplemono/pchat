@@ -55,6 +55,13 @@ MIT. Storrito-specific parts are fine here, customer-specific ones are not.
 ```bash
 echo 'OPENROUTER_API_KEY=...' > .env   # once
 bb start                             # http://localhost:8080, compiles the bundle first (JVM)
+```
+
+pchat reads `.env` and `.env.local` from the directory it starts in
+(quotes around a value and `export` in front are fine), so `bb -m
+pchat.main` or `bb pchat.jar` next to the file work the same.
+
+```sh
 bb test
 bb smoke                             # one real agent run: a card, music, the video; cents
 ```

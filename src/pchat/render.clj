@@ -7,7 +7,8 @@
   The key this namespace owns in a chat of the db:
 
       :renders {name {:started ms :progress \"frame 30/180\" :exit n :error \"...\"}}"
-  (:require [babashka.fs :as fs]
+  (:require [pchat.env :as env]
+            [babashka.fs :as fs]
             [babashka.process :as process]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -24,7 +25,7 @@
   "Whether an executable of the name is on the PATH of `env` (the
   render's environment) or of this process."
   [env name]
-  (let [path (or (get env "PATH") (System/getenv "PATH"))]
+  (let [path (or (get env "PATH") (env/get "PATH"))]
     (boolean (some #(fs/executable? (io/file % name)) (str/split (str path) #":")))))
 
 (defn missing-video-tools
