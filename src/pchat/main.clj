@@ -418,7 +418,7 @@
   [id]
   (assoc (tools/env)
          "PATH" (str (.getPath (io/file workspace "bin")) ":" (System/getenv "PATH"))
-         "TMPDIR" (str (chats/tmp-dir chats-dir id))))
+         "TMPDIR" (chats/tmp-path chats-dir id)))
 
 (defn- ensure-pi!
   [id]

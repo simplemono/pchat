@@ -137,7 +137,7 @@
                                 :out :stream
                                 :err :stream
                                 :extra-env (assoc (or env {})
-                                                  "TMPDIR" (str (chats/tmp-dir chats-dir id)))})
+                                                  "TMPDIR" (chats/tmp-path chats-dir id))})
             lines (atom [])
             note! (fn [line]
                     (swap! lines #(vec (take-last 20 (conj % line))))
