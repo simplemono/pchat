@@ -201,7 +201,7 @@
         (let [header (json/generate-string (assoc parsed :id cid :cwd (str conversation-dir)))
               prefix (subs (.getName file) 0 (- (count (.getName file)) 43))]
           (spit (io/file conversation-dir ".session" (str prefix "_" cid ".jsonl"))
-                (str/join "\n" (cons header lines))))))))
+                (str (str/join "\n" (cons header lines)) "\n")))))))
 
 (defn conversation!
   "The job's conversation: a chat of its own under chats/, named like
@@ -315,12 +315,18 @@
 
 (defn next-run
   "The first minute after `from` the cron line names, within a year, or
-  nil; `from` and the answer in the zone the line is meant in. A day or
-  an hour the line does not name is skipped whole."
-  [cron from]
+  nil; `from` and the answer in the zone the line is meant in. The line
+  is read on the wall clock of that zone, like cron does: a minute the
+  change of the clocks skips (02:30 on the night the clocks go forward)
+  comes as the minute an hour later, a minute that comes twice (the
+  night they go back) comes once, the first time. A day or an hour the
+  line does not name is skipped whole."
+  [cron ^java.time.ZonedDateTime from]
   (when-let [[minutes hours days months weekdays] (parse-cron cron)]
-    (let [limit (.plusYears ^java.time.ZonedDateTime from 1)]
-      (loop [at (.plusMinutes ^java.time.ZonedDateTime from 1)]
+    (let [zone (.getZone from)
+          local (.toLocalDateTime from)
+          limit (.plusYears local 1)]
+      (loop [at (.plusMinutes local 1)]
         (cond
           (.isAfter at limit) nil
 
@@ -335,7 +341,7 @@
           (not (contains? minutes (.getMinute at)))
           (recur (.plusMinutes at 1))
 
-          :else at)))))
+          :else (.atZone at zone))))))
 
 (defn minute-text
   [^java.time.ZonedDateTime at]
@@ -349,11 +355,14 @@
   :external: whether pchat fires the schedules itself), :add-chat! a
   function of a chat id that makes the page know the new chat,
   :send! a function of a chat id and a text, the first message,
-  :abort! a function of a chat id that stops its agent}"
+  :abort! a function of a chat id that stops its agent, :alive? a
+  function of a chat id, whether its agent's process is there (every
+  run counts as alive without it)}"
   [{:keys [workspace chats-dir] :as opts}]
   (assoc opts
          :workspace (io/file workspace)
          :chats-dir (io/file chats-dir)
+         :alive? (or (:alive? opts) (constantly true))
          :queue (atom {})
          :mtimes (atom {})
          :ticked (atom {})))
@@ -558,33 +567,62 @@
   (let [minutes (get-in (pchat.jobs/job handle job) [:caps :minutes] (:minutes default-caps))]
     (< (* minutes 60 1000) (- now started))))
 
+(def catch-up-minutes
+  "How far back a tick looks for a scheduled minute it has not fired:
+  a tick that came late (the work of the last one, a laptop asleep)
+  still fires it, an older one is missed."
+  60)
+
+(def interrupted-after-ms
+  "A run whose agent's process is not there this long after its start
+  (pchat was restarted while it ran) is failed."
+  (* 2 60 1000))
+
+(defn- since
+  "The wall-clock moment, in the job's zone, after which this tick
+  looks for a scheduled minute: the last minute it fired, the job's
+  last run, or the catch-up window, whichever is latest."
+  [{:keys [ticked]} {:keys [id last-run] :as job} ^java.time.ZonedDateTime at]
+  (let [zone (zone job)
+        local-now (.withZoneSameInstant at zone)
+        local-min (.toLocalDateTime local-now)
+        ;; A job moved west has a last firing ahead of its clock: forgotten.
+        fired (some-> (get @ticked id) (as-> t (when-not (.isAfter t local-min) t)))
+        candidates (keep identity [(.toLocalDateTime (.minusMinutes local-now catch-up-minutes))
+                                   fired
+                                   (some-> (:at last-run) (java.time.Instant/ofEpochMilli) (.atZone zone) (.toLocalDateTime))])]
+    (.atZone ^java.time.LocalDateTime (reduce #(if (.isAfter %2 %1) %2 %1) candidates) zone)))
+
 (defn tick!
-  "Once a minute: the runs past their time cap are stopped; with the
-  internal clock, the jobs whose schedule names this minute start."
-  [{:keys [db clock abort! ticked] :as handle} ^java.time.ZonedDateTime at]
+  "Once a minute, at the UTC minute `at`: the runs past their time cap
+  are stopped, the runs whose agent is gone are failed; with the
+  internal clock, a job whose schedule named a minute since its last
+  firing (see `since`) starts a run, once."
+  [{:keys [db clock abort! alive? ticked] :as handle} ^java.time.ZonedDateTime at]
   (load! handle)
   (let [now (System/currentTimeMillis)]
     (doseq [{:keys [id run]} (vals (:chats @db))
-            :when (and (= :running (:state run)) (over-time? handle run now))]
-      (abort! id)
-      (finish! handle id :stopped :time))
+            :when (= :running (:state run))]
+      (cond
+        (over-time? handle run now) (do (abort! id)
+                                        (finish! handle id :stopped :time))
+        (and (< interrupted-after-ms (- now (:started run 0)))
+             (not (alive? id))) (finish! handle id :failed :interrupted)))
     (when (not= :external clock)
-      (let [minute (minute-text at)]
-        (doseq [{:keys [id schedule state tz] :as job} (vals (:jobs @db))
-                :when (and (= :active state)
-                           schedule
-                           (due? schedule (.withZoneSameInstant at (zone job)))
-                           (not= minute (get @ticked id)))]
-          (swap! ticked assoc id minute)
-          (when-not (running handle id)
-            (start! handle id {:kind :schedule :cron schedule :tz tz :at now})))))))
+      (doseq [{:keys [id schedule state tz] :as job} (vals (:jobs @db))
+              :when (and (= :active state) schedule)
+              :let [next (next-run schedule (since handle job at))]
+              :when (and next (not (.isAfter (.toInstant next) (.toInstant at))))]
+        (swap! ticked assoc id (.toLocalDateTime (.withZoneSameInstant at (zone job))))
+        (when-not (running handle id)
+          (start! handle id {:kind :schedule :cron schedule :tz tz :at now}))))))
 
 (defn watch!
-  "The clock, once a minute, in the background."
+  "The clock, in the background: a tick right after every full minute."
   [handle]
   (future
     (loop []
-      (Thread/sleep 60000)
+      (Thread/sleep (+ 500 (- 60000 (mod (System/currentTimeMillis) 60000))))
       (try
         (tick! handle (now-utc))
         (catch Exception e
@@ -611,12 +649,20 @@
       (get-in request [:headers "x-job-token"])
       (some-> (get-in request [:headers "authorization"]) (str/replace #"^Bearer\s+" ""))))
 
+(def max-payload-bytes
+  "What of a call's body is read; the rest is dropped."
+  (* 1024 1024))
+
 (defn- payload-of
+  "The body of the call: JSON as data, anything else as text, at most
+  `max-payload-bytes` read and `max-payload-chars` kept (the run's
+  first message shows the same)."
   [request]
   (when-let [body (:body request)]
-    (let [bytes (.readAllBytes body)]
+    (let [bytes (.readNBytes body max-payload-bytes)]
       (when (pos? (count bytes))
-        (let [text (String. bytes "UTF-8")]
+        (let [text (String. bytes "UTF-8")
+              text (if (> (count text) max-payload-chars) (subs text 0 max-payload-chars) text)]
           (try
             (json/parse-string text true)
             (catch Exception _
@@ -632,7 +678,9 @@
     (assoc w :ring/response
            (cond
              (or (nil? job) (not= "run" action)) {:status 404 :headers {} :body "Not found"}
-             (not (timing-safe= (:token job) (str (token-of request)))) {:status 404 :headers {} :body "Not found"}
+             ;; A job without a token (a hand-edited file) has no endpoint.
+             (or (str/blank? (str (:token job)))
+                 (not (timing-safe= (:token job) (str (token-of request))))) {:status 404 :headers {} :body "Not found"}
              :else (let [{:keys [run queued error]} (start! handle id {:kind :endpoint
                                                                        :at (System/currentTimeMillis)
                                                                        :payload (payload-of request)})]

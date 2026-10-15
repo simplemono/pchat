@@ -37,8 +37,10 @@
     (is (= "Sa. 24 Okt. 09:00" (schedule/run-text (first runs) :de)))
     (is (= [] (schedule/next-runs "0 0 31 2 *" "UTC" 3 from)) "never"))
   (testing "a moment in a zone"
-    (is (= "Thu 15 Oct 11:00" (schedule/run-text (schedule/at-ms 1792062000000 "Europe/Berlin") :en)))
-    (is (= "Thu 15 Oct 09:00" (schedule/run-text (schedule/at-ms 1792062000000 "UTC") :en)))))
+    (let [ms (.toEpochMilli (.toInstant (java.time.ZonedDateTime/of 2026 10 15 9 0 0 0 java.time.ZoneOffset/UTC)))]
+      (is (= "Thu 15 Oct 11:00" (schedule/run-text (schedule/at-ms ms "Europe/Berlin") :en)))
+      (is (= "Do. 15 Okt. 11:00" (schedule/run-text (schedule/at-ms ms "Europe/Berlin") :de)))
+      (is (= "Thu 15 Oct 09:00" (schedule/run-text (schedule/at-ms ms "UTC") :en))))))
 
 (deftest zones-test
   (is (schedule/valid-zone? "Europe/Berlin"))

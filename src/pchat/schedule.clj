@@ -41,12 +41,26 @@
         (take n)
         (vec))))
 
+(def ^:private short-days
+  {:en ["Sun" "Mon" "Tue" "Wed" "Thu" "Fri" "Sat"]
+   :de ["So." "Mo." "Di." "Mi." "Do." "Fr." "Sa."]})
+
+(def ^:private short-months
+  {:en ["Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec"]
+   :de ["Jan." "Feb." "März" "Apr." "Mai" "Juni" "Juli" "Aug." "Sept." "Okt." "Nov." "Dez."]})
+
 (defn run-text
-  "A moment as the person reads it, `Thu 16 Oct 09:00`."
+  "A moment as the person reads it, `Thu 16 Oct 09:00`. Own name
+  tables: babashka ships no locale data, a German formatter would
+  print English."
   [^java.time.ZonedDateTime at locale]
-  (.format at (java.time.format.DateTimeFormatter/ofPattern
-               "EEE d MMM HH:mm"
-               (if (= :de locale) java.util.Locale/GERMAN java.util.Locale/ENGLISH))))
+  (let [locale (if (= :de locale) :de :en)]
+    (format "%s %d %s %02d:%02d"
+            (get-in short-days [locale (mod (.getValue (.getDayOfWeek at)) 7)])
+            (.getDayOfMonth at)
+            (get-in short-months [locale (dec (.getMonthValue at))])
+            (.getHour at)
+            (.getMinute at))))
 
 (defn at-ms
   "The moment of the milliseconds in the zone."

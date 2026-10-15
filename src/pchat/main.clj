@@ -378,15 +378,17 @@
                 (rendering-chats))))
 
 (defn- prune-tabs!
-  "The tabs the db remembers a chat for, less the ones gone for an
-  hour."
+  "The tabs the db remembers a chat or a job for, less the ones gone
+  for an hour."
   []
   (let [since (- (now) (* 60 60 1000))
-        gone (for [[tab _] (:tabs @db)
+        gone (for [tab (distinct (concat (keys (:tabs @db)) (keys (:job-tabs @db))))
                    :when (< (get-in @tab-views [tab :seen] 0) since)]
                tab)]
     (when (seq gone)
-      (swap! db update :tabs #(apply dissoc % gone)))))
+      (swap! db #(-> %
+                     (update :tabs (fn [tabs] (apply dissoc tabs gone)))
+                     (update :job-tabs (fn [tabs] (apply dissoc tabs gone))))))))
 
 (defn- poll-artifacts!
   "Looks at the artifacts folders of the chats someone watches twice a
@@ -491,10 +493,11 @@
   (jobs/handle {:db db
                 :workspace workspace
                 :chats-dir chats-dir
-                :clock (if (= "external" (System/getenv "PCHAT_CLOCK")) :external :internal)
+                :clock (if (= "external" (env/get "PCHAT_CLOCK")) :external :internal)
                 :add-chat! (fn [id] (swap! db assoc-in [:chats id] (new-chat id)))
                 :send! (fn [id text] (send! id text nil))
-                :abort! (fn [id] (when-let [p (get @pis id)] (pi/abort! p)))}))
+                :abort! (fn [id] (when-let [p (get @pis id)] (pi/abort! p)))
+                :alive? (fn [id] (boolean (some-> (get @pis id) pi/alive?)))}))
 
 (defn- keep!
   "The message of a chat whose agent is not there yet: kept in the
@@ -690,7 +693,8 @@
                   (update :chats dissoc id)
                   (update :tabs #(into {} (remove (fn [[_ chat]] (= chat id))) %))
                   (dissoc :deleting))))
-  (when (empty? (:chats @db))
+  ;; The conversations of the jobs are not in the list.
+  (when (empty? (remove :job (vals (:chats @db))))
     (new!)))
 
 (defn- delete-command
@@ -952,8 +956,8 @@
       (command/rejected w (say w [:i18n :command/no-such-job])))))
 
 (defn- job-words-command
-  "The person's words for when the job runs, from its page: nothing
-  turns the schedule off, a cron line is taken as it is, anything else
+  "The person's words for when the job runs, from its page: a cron line
+  is taken as it is, anything else
   goes to the model (see `pchat.schedule`); the answer shows under the
   field as a proposal, which the next command saves. `:tz` is the
   browser's zone, the job's from now on when it had none."
@@ -966,9 +970,10 @@
       (nil? job)
       (command/rejected w (say w [:i18n :command/no-such-job]))
 
+      ;; An emptied field proposes nothing; the schedule goes with the
+      ;; button for it, not by accident.
       (str/blank? text)
-      (do (jobs/write! jobs (assoc job :schedule nil :schedule-text nil))
-          (swap! db update :jobs/proposal dissoc id)
+      (do (swap! db update :jobs/proposal dissoc id)
           (command/accepted w))
 
       :else
@@ -1054,7 +1059,12 @@
   (let [{:keys [id]} (command/command-data w)]
     (cond
       (not (jobs/job jobs id)) (command/rejected w (say w [:i18n :command/no-such-job]))
-      (= id (:deleting-job @db)) (do (jobs/delete! workspace id)
+      (= id (:deleting-job @db)) (do ;; The conversation first: its agent ends, the tabs
+                                     ;; that showed it let go, then the job's folder.
+                                     (when-let [cid (:chat (jobs/job jobs id))]
+                                       (when (get-in @db [:chats cid])
+                                         (delete! cid)))
+                                     (jobs/delete! workspace id)
                                      (swap! db (fn [db]
                                                  (-> db
                                                      (update :jobs dissoc id)

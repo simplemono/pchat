@@ -659,17 +659,6 @@ html.theme-dark {
   width: auto;
 }
 
-.rchat .feed .run .made button.link {
-  padding: 0;
-  margin-right: 10px;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
 .pchat .rchat .bar .confirm {
   display: inline-flex;
   align-items: center;
@@ -1119,72 +1108,6 @@ html.theme-dark {
   opacity: 0.7;
 }
 
-.pchat .rchat .job {
-  padding: 16px;
-  overflow: auto;
-  max-width: 820px;
-}
-
-.pchat .rchat .job h2 {
-  margin: 20px 0 6px;
-  font-size: 15px;
-}
-
-.pchat .rchat .job .note {
-  margin: 4px 0 8px;
-  font-size: 12px;
-  color: var(--rchat-muted);
-}
-
-.pchat .rchat .job textarea.prompt {
-  width: 100%;
-  min-height: 220px;
-  box-sizing: border-box;
-  padding: 10px;
-  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--pchat-input-text, var(--rchat-text));
-  background: var(--pchat-input-bg, var(--rchat-panel));
-  border: 1px solid var(--pchat-input-line, var(--rchat-line));
-  border-radius: 6px;
-}
-
-.pchat .rchat .job input.line {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 8px 10px;
-  font: 13px ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: var(--pchat-input-text, var(--rchat-text));
-  background: var(--pchat-input-bg, var(--rchat-panel));
-  border: 1px solid var(--pchat-input-line, var(--rchat-line));
-  border-radius: 6px;
-}
-
-.pchat .rchat .job .error {
-  color: var(--rchat-warn);
-  font-size: 12px;
-}
-
-.pchat .rchat .job .actions {
-  display: flex;
-  gap: 12px;
-  margin: 16px 0;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.pchat .rchat .job table.runs {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 13px;
-}
-
-.pchat .rchat .job table.runs td,
-.pchat .rchat .job table.runs th {
-  text-align: left;
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--rchat-line);
-}
-
 .pchat .rchat .job .state.failed,
 .pchat .rchat .job .state.stopped {
   color: var(--rchat-warn);
@@ -1363,10 +1286,6 @@ html.theme-dark {
 
 .pchat .rchat .job table.runs td {
   padding: 5px 14px 5px 0;
-}
-
-.pchat .rchat .job table.runs td {
-  padding: 3px 12px 3px 0;
   vertical-align: top;
 }
 
