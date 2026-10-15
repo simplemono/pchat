@@ -25,15 +25,13 @@
             :state :running|:done|:failed|:stopped :reason
             :started ms :ended ms :cost usd}
 
-  Triggers: a POST to `/jobs/<id>/run` with the job's token (a
-  service, the owner of the machine firing a schedule, the Run now
-  button), and the schedule, fired from outside by the owner of the
-  machine calling the endpoint at the time (the machines pchat runs on
-  sleep between requests and keep no time), or by pchat itself every
-  minute with `PCHAT_CLOCK=internal`. One run at a
-  time per job: a trigger during a run waits, one at most; a schedule
-  tick during a run is skipped. Three failed runs in a row pause the
-  job. Needs nothing beyond babashka, so that `bin/job` loads it from
+  Triggers: a POST to `/jobs/<id>/run` with the job's token: a
+  service, the Run now button, or the owner of the machine firing the
+  job's schedule. pchat keeps no clock itself: the machines it runs on
+  sleep between requests, so the schedule, a cron line in the job's
+  time zone, is registered with the owner's service, which calls the
+  endpoint at the time. One run at a time per job: a trigger during a
+  run waits, one at most. Three failed runs in a row pause the job. Needs nothing beyond babashka, so that `bin/job` loads it from
   `.pchat/lib`.
 
   The db keys this namespace owns: `:jobs {id job}` and
@@ -297,17 +295,6 @@
   [text]
   (some? (parse-cron text)))
 
-(defn due?
-  "Whether the cron line names this minute, `at` in the zone the line
-  is meant in."
-  [cron ^java.time.ZonedDateTime at]
-  (when-let [[minutes hours days months weekdays] (parse-cron cron)]
-    (and (contains? minutes (.getMinute at))
-         (contains? hours (.getHour at))
-         (contains? days (.getDayOfMonth at))
-         (contains? months (.getMonthValue at))
-         (contains? weekdays (mod (.getValue (.getDayOfWeek at)) 7)))))
-
 (defn now-utc
   []
   (-> (java.time.ZonedDateTime/now java.time.ZoneOffset/UTC)
@@ -316,12 +303,13 @@
 
 (defn next-run
   "The first minute after `from` the cron line names, within a year, or
-  nil; `from` and the answer in the zone the line is meant in. The line
-  is read on the wall clock of that zone, like cron does: a minute the
-  change of the clocks skips (02:30 on the night the clocks go forward)
-  comes as the minute an hour later, a minute that comes twice (the
-  night they go back) comes once, the first time. A day or an hour the
-  line does not name is skipped whole."
+  nil; `from` and the answer in the zone the line is meant in: what the
+  page shows as the next runs. The line is read on the wall clock of
+  that zone, like cron does: a minute the change of the clocks skips
+  (02:30 on the night the clocks go forward) comes as the minute an
+  hour later, a minute that comes twice (the night they go back) comes
+  once, the first time. A day or an hour the line does not name is
+  skipped whole."
   [cron ^java.time.ZonedDateTime from]
   (when-let [[minutes hours days months weekdays] (parse-cron cron)]
     (let [zone (.getZone from)
@@ -352,8 +340,7 @@
 ;;; A run
 
 (defn handle
-  "{:db the app's atom, :workspace, :chats-dir, :clock (:internal or
-  :external: whether pchat fires the schedules itself), :add-chat! a
+  "{:db the app's atom, :workspace, :chats-dir, :add-chat! a
   function of a chat id that makes the page know the new chat,
   :send! a function of a chat id and a text, the first message,
   :abort! a function of a chat id that stops its agent, :alive? a
@@ -365,8 +352,7 @@
          :chats-dir (io/file chats-dir)
          :alive? (or (:alive? opts) (constantly true))
          :queue (atom {})
-         :mtimes (atom {})
-         :ticked (atom {})))
+         :mtimes (atom {})))
 
 (defn- with-next
   "The job with `:next`, the milliseconds of its next scheduled minute."
@@ -561,45 +547,22 @@
                           (finish! handle chat-id :stopped :cost))
           nil)))))
 
-;;; The clock
+;;; The housekeeping
 
 (defn- over-time?
   [handle {:keys [started job]} now]
   (let [minutes (get-in (pchat.jobs/job handle job) [:caps :minutes] (:minutes default-caps))]
     (< (* minutes 60 1000) (- now started))))
 
-(def catch-up-minutes
-  "How far back a tick looks for a scheduled minute it has not fired:
-  a tick that came late (the work of the last one, a laptop asleep)
-  still fires it, an older one is missed."
-  60)
-
 (def interrupted-after-ms
   "A run whose agent's process is not there this long after its start
   (pchat was restarted while it ran) is failed."
   (* 2 60 1000))
 
-(defn- since
-  "The wall-clock moment, in the job's zone, after which this tick
-  looks for a scheduled minute: the last minute it fired, the job's
-  last run, or the catch-up window, whichever is latest."
-  [{:keys [ticked]} {:keys [id last-run] :as job} ^java.time.ZonedDateTime at]
-  (let [zone (zone job)
-        local-now (.withZoneSameInstant at zone)
-        local-min (.toLocalDateTime local-now)
-        ;; A job moved west has a last firing ahead of its clock: forgotten.
-        fired (some-> (get @ticked id) (as-> t (when-not (.isAfter t local-min) t)))
-        candidates (keep identity [(.toLocalDateTime (.minusMinutes local-now catch-up-minutes))
-                                   fired
-                                   (some-> (:at last-run) (java.time.Instant/ofEpochMilli) (.atZone zone) (.toLocalDateTime))])]
-    (.atZone ^java.time.LocalDateTime (reduce #(if (.isAfter %2 %1) %2 %1) candidates) zone)))
-
 (defn tick!
-  "Once a minute, at the UTC minute `at`: the runs past their time cap
-  are stopped, the runs whose agent is gone are failed; with the
-  internal clock, a job whose schedule named a minute since its last
-  firing (see `since`) starts a run, once."
-  [{:keys [db clock abort! alive? ticked] :as handle} ^java.time.ZonedDateTime at]
+  "Once a minute: the jobs read again, the runs past their time cap
+  stopped, the runs whose agent is gone failed."
+  [{:keys [db abort! alive?] :as handle}]
   (load! handle)
   (let [now (System/currentTimeMillis)]
     (doseq [{:keys [id run]} (vals (:chats @db))
@@ -608,24 +571,16 @@
         (over-time? handle run now) (do (abort! id)
                                         (finish! handle id :stopped :time))
         (and (< interrupted-after-ms (- now (:started run 0)))
-             (not (alive? id))) (finish! handle id :failed :interrupted)))
-    (when (not= :external clock)
-      (doseq [{:keys [id schedule state tz] :as job} (vals (:jobs @db))
-              :when (and (= :active state) schedule)
-              :let [next (next-run schedule (since handle job at))]
-              :when (and next (not (.isAfter (.toInstant next) (.toInstant at))))]
-        (swap! ticked assoc id (.toLocalDateTime (.withZoneSameInstant at (zone job))))
-        (when-not (running handle id)
-          (start! handle id {:kind :schedule :cron schedule :tz tz :at now}))))))
+             (not (alive? id))) (finish! handle id :failed :interrupted)))))
 
 (defn watch!
-  "The clock, in the background: a tick right after every full minute."
+  "The housekeeping, in the background, right after every full minute."
   [handle]
   (future
     (loop []
       (Thread/sleep (+ 500 (- 60000 (mod (System/currentTimeMillis) 60000))))
       (try
-        (tick! handle (now-utc))
+        (tick! handle)
         (catch Exception e
           (binding [*out* *err*]
             (println "[jobs]" (str e)))))

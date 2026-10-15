@@ -272,9 +272,7 @@ other week) comes back as a sentence. Every job has a time zone, the
 browser's when it is made, chosen on the page or with `bin/job tz`;
 the line is read on that zone's wall clock like cron reads it, and the
 agent sets it with `bin/job schedule <id> "0 9 * * 1-5" Europe/Berlin`.
-With its own clock (`PCHAT_CLOCK=internal`, below) pchat ticks after
-every full minute; a minute it missed within the last hour still
-fires, once. The endpoint, `POST
+The endpoint, `POST
 /jobs/<id>/run?token=<token>` (or the token in `X-Job-Token` or as a
 bearer), outside the page's token, to paste into any service that can
 call an address, for example Composio's trigger setup for a new file
@@ -282,14 +280,13 @@ in a folder or a message in a channel; the body of the call reaches the
 agent as text (a megabyte read, twenty thousand characters kept); the
 answer is `{"run": "<chat-id>"}` or `{"queued": true}`.
 
-By default pchat fires no schedule itself: the machines it runs on
-sleep between requests and keep no time. The owner of the machine
-does, by calling the endpoint at the time; `bin/job schedule` tells
-the agent to register the schedule, with its time zone, with the
-owner's service (it searches the connected services for a tool that
-registers a schedule for a URL). `PCHAT_CLOCK=internal` in the
-environment makes pchat keep the time itself, for a machine that
-stays awake. `bin/job
+pchat keeps no clock: the machines it runs on sleep between requests.
+The owner of the machine fires the schedule by calling the endpoint
+at the time; `bin/job schedule` tells the agent to register the
+schedule, with its time zone, with the owner's service (it searches
+the connected services for a tool that registers a schedule for a
+URL). A machine that stays awake can do the same with its own cron
+and `curl`. `bin/job
 show|list|run|pause|resume|rename|delete` are the rest (`pchat.jobs`,
 `pchat.jobs-view`).
 

@@ -94,7 +94,7 @@
   "When the job runs: the schedule as words with the next runs, the
   field for new words with four quick picks, the proposal, the time
   zone, the way to turn it off."
-  [{:keys [id schedule schedule-text] :as job} {:keys [proposal clock locale]} tz]
+  [{:keys [id schedule schedule-text] :as job} {:keys [proposal locale]} tz]
   (list
    (if schedule
      (list
@@ -132,13 +132,13 @@
        [:button.link.off {:on {:click [[:data/command {:command/kind :job/schedule-off
                                                        :command/data {:id id}}]]}}
         [:i18n :job/off]]))]
-   (when (and schedule (= :external clock))
+   (when schedule
      [:p.note [:i18n :job/external-clock]])))
 
 (defn panel
   "`opts`: `:job`, `:runs` (the chats of the runs, newest first),
-  `:endpoint` (the full address), `:clock`, `:proposal` (the answer to
-  the person's words, see `pchat.schedule`), `:deleting`, `:locale`."
+  `:endpoint` (the full address), `:proposal` (the answer to the
+  person's words, see `pchat.schedule`), `:deleting`, `:locale`."
   [{:keys [job runs endpoint deleting locale] :as opts}]
   (let [{:keys [id state failures caps prompt tz]} job
         tz (or (not-empty (str tz)) "UTC")

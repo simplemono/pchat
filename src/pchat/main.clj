@@ -7,8 +7,6 @@
       PCHAT_MODEL      default openai/gpt-6.1-sol
       PCHAT_TOKEN      a secret: the page is behind the link that sets the cookie
       PCHAT_AGENTITOS  an agentitos checkout: its skills are the tasks a chat can be for
-      PCHAT_CLOCK      internal: pchat fires the jobs' schedules itself; by default
-                       (external) the owner of the machine does, by calling the endpoints
       BB               the babashka executable for the artifact projects, default bb
 
   The variables come from the environment, or from .env and .env.local
@@ -489,14 +487,11 @@
 
 (def jobs
   "The jobs (see `pchat.jobs`): a run is a chat made here, its first
-  message sent like any other. The schedules are fired from outside
-  unless `PCHAT_CLOCK=internal`: pchat runs on machines that sleep
-  between requests and keep no time, their owner calls the endpoints at
-  the time."
+  message sent like any other; the schedules are fired from outside,
+  by the owner of the machine calling the endpoints at the time."
   (jobs/handle {:db db
                 :workspace workspace
                 :chats-dir chats-dir
-                :clock (if (= "internal" (env/get "PCHAT_CLOCK")) :internal :external)
                 :add-chat! (fn [id] (swap! db assoc-in [:chats id] (new-chat id)))
                 :send! (fn [id text] (send! id text nil))
                 :abort! (fn [id] (when-let [p (get @pis id)] (pi/abort! p)))
@@ -1145,7 +1140,6 @@
                                    {:job (get-in value [:jobs job-id])
                                     :runs (jobs/runs-of jobs job-id)
                                     :endpoint (str base-url (jobs/endpoint-path (get-in value [:jobs job-id])))
-                                    :clock (:clock jobs)
                                     :proposal (get-in value [:jobs/proposal job-id])
                                     :deleting (:deleting-job value)
                                     :locale locale})
@@ -1489,9 +1483,7 @@
                     token (auth/link (str "http://localhost:" port) token)
                     :else (str "http://localhost:" port))
                   ", " (count (:chats @db)) " chats, " (count (:jobs @db)) " jobs"
-                  (if (= :internal (:clock jobs))
-                    " (the schedules fire from this process, PCHAT_CLOCK=internal)"
-                    " (the schedules are fired from outside)")
+
                   ", the model is " provider "/" model
                   ", the workspace " (.getCanonicalPath workspace)
                   (if nrepl-port (str ", nREPL on 127.0.0.1:" nrepl-port) ", no nREPL")

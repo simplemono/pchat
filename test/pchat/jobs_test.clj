@@ -30,11 +30,7 @@
     (is (nil? (jobs/parse-cron "a b c d e")))
     (is (nil? (jobs/parse-cron "")))
     (is (nil? (jobs/parse-cron "*/0 * * * *"))))
-  (testing "due and the next run"
-    (is (jobs/due? "30 14 * * *" (utc 2026 10 14 14 30)))
-    (is (not (jobs/due? "30 14 * * *" (utc 2026 10 14 14 31))))
-    (is (jobs/due? "0 9 * * 1-5" (utc 2026 10 14 9 0)) "a Wednesday")
-    (is (not (jobs/due? "0 9 * * 1-5" (utc 2026 10 17 9 0))) "a Saturday")
+  (testing "the next run"
     (is (= "2026-10-15 09:00Z" (jobs/minute-text (jobs/next-run "0 9 * * 1-5" (utc 2026 10 14 9 0)))))
     (is (= "2026-10-19 09:00Z" (jobs/minute-text (jobs/next-run "0 9 * * 1-5" (utc 2026 10 16 9 0)))) "over the weekend")
     (is (= "2026-10-14 14:45Z" (jobs/minute-text (jobs/next-run "*/15 * * * *" (utc 2026 10 14 14 31)))))
@@ -83,7 +79,6 @@
     (merge (jobs/handle (merge {:db db
                                 :workspace workspace
                                 :chats-dir (io/file workspace "chats")
-                                :clock :internal
                                 :add-chat! (fn [id] (swap! db assoc-in [:chats id] {:id id :items [] :status :idle :cost 0.0}))
                                 :send! (fn [id text] (swap! sent conj [id text]))
                                 :abort! (fn [id] (swap! aborted conj id))}
@@ -215,7 +210,7 @@
           (is (= {:queued true} (jobs/start! handle id {:kind :endpoint :at 2000 :payload "second"})))
           (is (= {:queued true} (jobs/start! handle id {:kind :endpoint :at 3000 :payload "third"})) "the newest waiting trigger wins")
           (jobs/write! handle (assoc (jobs/job handle id) :schedule "* * * * *"))
-          (jobs/tick! handle (utc 2026 10 14 10 0))
+          (jobs/tick! handle)
           (is (= 1 (count @sent)) "nothing started during the run")
           (jobs/write! handle (assoc (jobs/job handle id) :schedule nil)))
         (testing "the agent settles: done with the cost, the waiting trigger starts the next run"
@@ -241,7 +236,7 @@
     (testing "the time cap stops a run on a tick"
       (let [{:keys [run]} (jobs/start! handle id {:kind :manual :at 0})]
         (swap! db assoc-in [:chats run :run :started] (- (System/currentTimeMillis) (* 31 60 1000)))
-        (jobs/tick! handle (utc 2026 10 14 10 1))
+        (jobs/tick! handle)
         (is (= :stopped (get-in @db [:chats run :run :state])))
         (is (= :time (get-in @db [:chats run :run :reason])))))
     (testing "three failed runs in a row pause the job"
@@ -275,66 +270,15 @@
 
 (deftest schedule-test
   (let [workspace (temp-dir)
-        {:keys [db sent] :as handle} (handle! workspace)
+        {:keys [db] :as handle} (handle! workspace)
         from (chat-folder! workspace (chats/new-id))
         {:keys [id]} (jobs/create! workspace {:name "Nine" :from (str from)})]
     (jobs/load! handle)
     (jobs/write! handle (assoc (jobs/job handle id) :schedule "0 9 * * 1-5"))
     (is (number? (get-in @db [:jobs id :next])) "the next run as milliseconds")
-    (testing "a due minute starts a run once"
-      (jobs/tick! handle (utc 2026 10 14 8 59))
-      (is (= 0 (count @sent)))
-      (jobs/tick! handle (utc 2026 10 14 9 0))
-      (is (= 1 (count @sent)))
-      (jobs/tick! handle (utc 2026 10 14 9 0))
-      (is (= 1 (count @sent)) "the same minute does not fire twice")
-      (is (= {:kind :schedule :cron "0 9 * * 1-5"} (-> (jobs/runs-of handle id) first :run :trigger (select-keys [:kind :cron])))))
-    (testing "a paused job does not fire"
-      (jobs/write! handle (assoc (jobs/job handle id) :state :paused))
-      (jobs/tick! handle (utc 2026 10 15 9 0))
-      (is (= 1 (count @sent))))
-    (testing "with the external clock nothing fires; the endpoint is the way"
-      (jobs/write! handle (assoc (jobs/job handle id) :state :active))
-      (jobs/tick! (assoc handle :clock :external) (utc 2026 10 16 9 0))
-      (is (= 1 (count @sent))))
-    (testing "in the job's zone: 9:00 in Berlin is 7:00 UTC in October"
-      (jobs/finish! handle (:id (first (jobs/runs-of handle id))) :done)
-      ;; finish! stamps the real time; the test lives in October 2026.
-      (jobs/write! handle (assoc (jobs/job handle id) :tz "Europe/Berlin" :last-run {:at (.toEpochMilli (.toInstant (utc 2026 10 14 9 0)))}))
-      (jobs/tick! handle (utc 2026 10 19 9 0))
-      (is (= 1 (count @sent)) "not at 9:00 UTC")
-      (jobs/tick! handle (utc 2026 10 19 7 0))
-      (is (= 2 (count @sent)) "at 7:00 UTC")
-      (is (= "Europe/Berlin" (-> (jobs/runs-of handle id) first :run :trigger :tz))))
-    (testing "a late tick still fires a minute of the last hour, once; an older one is missed"
-      (jobs/finish! handle (:id (first (jobs/runs-of handle id))) :done)
-      (jobs/write! handle (assoc (jobs/job handle id) :last-run {:at (.toEpochMilli (.toInstant (utc 2026 10 19 7 0)))}))
-      (jobs/tick! handle (utc 2026 10 20 7 40))
-      (is (= 3 (count @sent)) "7:00 Berlin lies 40 minutes back")
-      (jobs/tick! handle (utc 2026 10 20 7 41))
-      (is (= 3 (count @sent)) "not twice")
-      (jobs/finish! handle (:id (first (jobs/runs-of handle id))) :done)
-      (jobs/write! handle (assoc (jobs/job handle id) :last-run {:at (.toEpochMilli (.toInstant (utc 2026 10 20 7 0)))}))
-      (jobs/tick! handle (utc 2026 10 21 9 30))
-      (is (= 3 (count @sent)) "7:00 lies too far back"))
-    (testing "the night the clocks go forward: the skipped 02:30 runs at 03:30"
-      ;; The test travels back to March; a clock never does.
-      (reset! (:ticked handle) {})
-      (jobs/finish! handle (:id (first (jobs/runs-of handle id))) :done)
-      (jobs/write! handle (assoc (jobs/job handle id) :schedule "30 2 * * *" :last-run {:at (.toEpochMilli (.toInstant (utc 2026 3 28 1 30)))}))
-      (jobs/tick! handle (utc 2026 3 29 1 0))
-      (is (= 3 (count @sent)) "03:00 local, not yet")
-      (jobs/tick! handle (utc 2026 3 29 1 30))
-      (is (= 4 (count @sent)) "03:30 local"))
-    (testing "the night the clocks go back: 02:30 comes twice, the run once"
-      (jobs/finish! handle (:id (first (jobs/runs-of handle id))) :done)
-      (jobs/write! handle (assoc (jobs/job handle id) :last-run {:at (.toEpochMilli (.toInstant (utc 2026 10 24 0 30)))}))
-      (jobs/tick! handle (utc 2026 10 25 0 30))
-      (is (= 5 (count @sent)) "02:30+02:00")
-      (jobs/finish! handle (:id (first (jobs/runs-of handle id))) :done)
-      (jobs/write! handle (assoc (jobs/job handle id) :last-run {:at (.toEpochMilli (.toInstant (utc 2026 10 25 0 31)))}))
-      (jobs/tick! handle (utc 2026 10 25 1 30))
-      (is (= 5 (count @sent)) "02:30+01:00 is the same wall-clock minute"))))
+    (testing "pchat keeps no clock: a tick starts nothing"
+      (jobs/tick! handle)
+      (is (= [] (jobs/runs-of handle id))))))
 
 (deftest interrupted-run-test
   (let [workspace (temp-dir)
@@ -347,10 +291,10 @@
     (let [{:keys [run]} (jobs/start! handle id {:kind :manual :at (- (System/currentTimeMillis) (* 3 60 1000))})]
       (is (= 1 (count @sent)))
       (swap! db assoc-in [:chats run :run :started] (- (System/currentTimeMillis) (* 3 60 1000)))
-      (jobs/tick! handle (jobs/now-utc))
+      (jobs/tick! handle)
       (is (= :running (get-in @db [:chats run :run :state])) "the agent is there")
       (reset! alive false)
-      (jobs/tick! handle (jobs/now-utc))
+      (jobs/tick! handle)
       (is (= :failed (get-in @db [:chats run :run :state])) "pchat came back without it")
       (is (= :interrupted (get-in @db [:chats run :run :reason]))))))
 

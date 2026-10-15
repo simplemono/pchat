@@ -43,10 +43,6 @@
 (def workspace
   (str (fs/parent (fs/parent chat-dir))))
 
-(def external-clock?
-  "The schedules are fired from outside unless PCHAT_CLOCK=internal."
-  (not= "internal" (System/getenv "PCHAT_CLOCK")))
-
 (def base-url
   (or (not-empty (System/getenv "PCHAT_PUBLIC_URL"))
       (str "http://localhost:" (or (System/getenv "PORT") "8080"))))
@@ -61,15 +57,12 @@
   (str base-url (jobs/endpoint-path job)))
 
 (defn schedule-note
-  "What the person or the owner of the machine has to do for a schedule
-  to fire on this machine."
+  "What has to happen for a schedule to fire: pchat keeps no clock."
   [{:keys [schedule] :as job}]
   (when schedule
-    (if external-clock?
-      (str "This machine sleeps between requests and does not keep time by itself: the schedule fires when its owner calls the endpoint at the time. "
-           "Register it there: search the connected services for a tool that registers a schedule for a URL (the job id " (:id job)
-           ", the cron line " (pr-str schedule) ", the time zone " (:tz job "UTC") ", the URL " (endpoint job) ", the token " (:token job) "); without that tool, the person has to arrange the call.")
-      (str "pchat fires the schedule itself, every minute it checks what is due, in the job's time zone (" (:tz job "UTC") ")."))))
+    (str "This machine sleeps between requests and does not keep time by itself: the schedule fires when its owner calls the endpoint at the time. "
+         "Register it there: search the connected services for a tool that registers a schedule for a URL (the job id " (:id job)
+         ", the cron line " (pr-str schedule) ", the time zone " (:tz job "UTC") ", the URL " (endpoint job) ", the token " (:token job) "); without that tool, the person has to arrange the call.")))
 
 (defn next-text
   [{:keys [schedule tz]}]
