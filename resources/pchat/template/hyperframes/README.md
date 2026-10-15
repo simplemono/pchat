@@ -11,17 +11,29 @@ loads it again whenever a file of it changes.
   timeline registered as `window.__timelines["main"]`. What changes per
   use is a variable: declared on `<html data-composition-variables>`, read
   with `window.__hyperframes.getVariables()`.
+- The variables are the controls beside the player: one per declaration,
+  `{"id": "title", "type": "string", "label": "Title", "default": "Hello"}`,
+  types `string`, `number` (`min`, `max`, `step`), `color` and `boolean`,
+  `options` for a choice (`["calm", {"value": "loud", "label": "Loud"}]`).
+  What the person sets goes into `variables.json` here; the composition
+  gets it as `window.__hfVariables`, the way the render does, so read the
+  variables when the composition loads. Write `variables.json` yourself
+  to set values; the controls follow.
 - Music or a voice: put the file into `composition/` and declare it,
   `<audio id="music" src="music.mp3" data-start="0" data-duration="6"
   data-volume="0.6" data-fade-out="1">`, also `data-media-start` and
   `data-fade-in`. It plays in the preview and is mixed into the video.
   Images go into `composition/` as well.
 - The video: `bin/render <name>` from the workspace, `artifacts/<name>.mp4`
-  by `hyperframes render`. A `variables.json` in this directory gives the
-  variables their values for that render.
+  by `hyperframes render`, with the values of `variables.json`.
 - `hyperframes lint` in `composition/` finds mistakes in seconds;
   `hyperframes check` plays the whole composition and takes minutes, so
   leave it to the render.
-- `src/artifact/main.clj` is the small server that shows the composition;
-  it needs no change.
+- `src/artifact/main.clj` is the small server that shows the composition
+  and the controls, a page of rframes; it needs no change. Other controls:
+  `src/artifact/controls.clj`, namespace `artifact.controls`, with
+  `controls` (a function of the declarations and the values to hiccup;
+  `[[:data/command {:command/kind :variables/set :command/data {:id "title"
+  :value :event/target.value}}]]` sets a value) and `register`, more
+  rframes entries such as commands of its own.
 - `.log` has the output of the process, errors included.
