@@ -44,7 +44,8 @@
   (str (fs/parent (fs/parent chat-dir))))
 
 (def external-clock?
-  (= "external" (System/getenv "PCHAT_CLOCK")))
+  "The schedules are fired from outside unless PCHAT_CLOCK=internal."
+  (not= "internal" (System/getenv "PCHAT_CLOCK")))
 
 (def base-url
   (or (not-empty (System/getenv "PCHAT_PUBLIC_URL"))

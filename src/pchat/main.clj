@@ -4,14 +4,16 @@
       PORT             default 8080
       PCHAT_WORKSPACE  the folder of the chats, default ./workspace
       PCHAT_PROVIDER   default openrouter (OPENROUTER_API_KEY in the environment)
+      PCHAT_MODEL      default openai/gpt-6.1-sol
+      PCHAT_TOKEN      a secret: the page is behind the link that sets the cookie
+      PCHAT_AGENTITOS  an agentitos checkout: its skills are the tasks a chat can be for
+      PCHAT_CLOCK      internal: pchat fires the jobs' schedules itself; by default
+                       (external) the owner of the machine does, by calling the endpoints
+      BB               the babashka executable for the artifact projects, default bb
 
   The variables come from the environment, or from .env and .env.local
   in the working directory (see `pchat.env`): a hand start next to the
   file needs no export.
-      PCHAT_MODEL      default openai/gpt-6.1-sol
-      PCHAT_TOKEN      a secret: the page is behind the link that sets the cookie
-      PCHAT_AGENTITOS  an agentitos checkout: its skills are the tasks a chat can be for
-      BB               the babashka executable for the artifact projects, default bb
 
   The app value: {:chats {id chat} :tabs {tabid id} :skills [skill]}. A
   chat is the value of `pchat.chat` plus :id, :name, :task (the name of
@@ -487,13 +489,14 @@
 
 (def jobs
   "The jobs (see `pchat.jobs`): a run is a chat made here, its first
-  message sent like any other; `PCHAT_CLOCK=external` says the machine
-  sleeps between requests and its owner fires the schedules by calling
-  the endpoints."
+  message sent like any other. The schedules are fired from outside
+  unless `PCHAT_CLOCK=internal`: pchat runs on machines that sleep
+  between requests and keep no time, their owner calls the endpoints at
+  the time."
   (jobs/handle {:db db
                 :workspace workspace
                 :chats-dir chats-dir
-                :clock (if (= "external" (env/get "PCHAT_CLOCK")) :external :internal)
+                :clock (if (= "internal" (env/get "PCHAT_CLOCK")) :internal :external)
                 :add-chat! (fn [id] (swap! db assoc-in [:chats id] (new-chat id)))
                 :send! (fn [id text] (send! id text nil))
                 :abort! (fn [id] (when-let [p (get @pis id)] (pi/abort! p)))
@@ -1486,7 +1489,9 @@
                     token (auth/link (str "http://localhost:" port) token)
                     :else (str "http://localhost:" port))
                   ", " (count (:chats @db)) " chats, " (count (:jobs @db)) " jobs"
-                  (when (= :external (:clock jobs)) " (the schedules are fired from outside, PCHAT_CLOCK=external)")
+                  (if (= :internal (:clock jobs))
+                    " (the schedules fire from this process, PCHAT_CLOCK=internal)"
+                    " (the schedules are fired from outside)")
                   ", the model is " provider "/" model
                   ", the workspace " (.getCanonicalPath workspace)
                   (if nrepl-port (str ", nREPL on 127.0.0.1:" nrepl-port) ", no nREPL")

@@ -27,9 +27,10 @@
 
   Triggers: a POST to `/jobs/<id>/run` with the job's token (a
   service, the owner of the machine firing a schedule, the Run now
-  button), and the schedule, which pchat fires itself every minute
-  unless `PCHAT_CLOCK=external` says the machine sleeps between
-  requests and its owner calls the endpoint at the time. One run at a
+  button), and the schedule, fired from outside by the owner of the
+  machine calling the endpoint at the time (the machines pchat runs on
+  sleep between requests and keep no time), or by pchat itself every
+  minute with `PCHAT_CLOCK=internal`. One run at a
   time per job: a trigger during a run waits, one at most; a schedule
   tick during a run is skipped. Three failed runs in a row pause the
   job. Needs nothing beyond babashka, so that `bin/job` loads it from
