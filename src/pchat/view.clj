@@ -13,6 +13,7 @@
             [pchat.genui :as genui]
             [pchat.jobs :as jobs]
             [pchat.jobs-view :as jobs-view]
+            [pchat.schedule :as schedule]
             [pchat.skills :as skills]
             [rchat.feed :as feed]))
 
@@ -254,10 +255,13 @@
      [:i18n :chat/delete]]))
 
 (defn- job-button
-  "Asks the agent to turn the chat into a job (see `pchat.jobs`)."
+  "Turns the chat into a job (see `pchat.jobs`), shown in this tab, in
+  the browser's time zone."
   [{:keys [id]}]
   [:button.link.job {:on {:click [[:data/command {:command/kind :job/turn
-                                                  :command/data {:id id}}]]}}
+                                                  :command/data {:id id
+                                                                 :tab :pchat/tabid
+                                                                 :tz :pchat/timezone}}]]}}
    [:i18n :job/turn]])
 
 (defn- hook-button
@@ -474,20 +478,29 @@
 
 (defn header
   "The name of the chat is a field: a change renames it. `:task` is the
-  title of the chat's task, when it has one."
-  [{:keys [id status cost name] :as chat} {:keys [deleting hook-open task]}]
+  title of the chat's task, when it has one. On a job's page (`:job`,
+  the job) the chat is the job's conversation: the field renames the
+  job, and the job's own actions are beside the chat."
+  [{:keys [id status cost name] :as chat} {:keys [deleting hook-open task job]}]
   [:header.bar
    ;; On a phone the sidebar is a drawer; this opens it (see the
    ;; checkbox in `page`).
    [:label.menu {:for "nav" :aria-label [:i18n :page/chats]} "\u2630"]
    [:h1
-    [:input.title {:replicant/key id
-                   :value (or name "")
-                   :placeholder (chat-name chat)
-                   :title [:i18n :chat/rename-title]
-                   :on {:change [[:data/command {:command/kind :chat/rename
-                                                 :command/data {:id id
-                                                                :name :event/target.value}}]]}}]]
+    (if job
+      [:input.title {:replicant/key (str "job-" (:id job))
+                     :value (or (:name job) "")
+                     :title [:i18n :job/rename-title]
+                     :on {:change [[:data/command {:command/kind :job/rename
+                                                   :command/data {:id (:id job)
+                                                                  :name :event/target.value}}]]}}]
+      [:input.title {:replicant/key id
+                     :value (or name "")
+                     :placeholder (chat-name chat)
+                     :title [:i18n :chat/rename-title]
+                     :on {:change [[:data/command {:command/kind :chat/rename
+                                                   :command/data {:id id
+                                                                  :name :event/target.value}}]]}}])]
    (when task
      [:span.task-chip task])
    [:span.status {:class (clojure.core/name status)}
@@ -496,9 +509,11 @@
       [:i18n :chat/ready])]
    (when (pos? cost)
      [:span.spend (format "$%.2f" cost)])
-   (job-button chat)
-   (hook-button chat hook-open)
-   (delete-controls chat deleting)])
+   (when-not job
+     (list
+      (job-button chat)
+      (hook-button chat hook-open)
+      (delete-controls chat deleting)))])
 
 (defn composer
   "`:placeholder` in `opts` is the task's, the general one without. The
@@ -548,7 +563,8 @@
   ([{:keys [chats jobs settings-open update]} {:keys [id locale] :as opts}]
   (let [shown id
         shown-job (get-in opts [:job :job :id])
-        chats (sort-by #(or (:updated %) 0) > (vals chats))
+        ;; The conversations of the jobs are on the jobs' pages.
+        chats (sort-by #(or (:updated %) 0) > (remove :job (vals chats)))
         jobs (sort-by #(or (:created %) 0) (vals jobs))]
     [:aside.sidebar
      [:div.brand "pchat"
@@ -579,7 +595,7 @@
        (list
         [:div.jobs-heading [:i18n :job/heading]]
         [:ul.jobs
-         (for [{:keys [id name state schedule next]} jobs]
+         (for [{:keys [id name state schedule next tz]} jobs]
            [:li {:replicant/key id
                  :class (when (= id shown-job) "current")}
             [:a.row {:href (jobs/url id)
@@ -590,7 +606,7 @@
               (when (= :active state)
                 (list ", "
                       (if (and schedule next)
-                        [:i18n :job/next {:at next}]
+                        [:i18n :job/next {:at (schedule/run-text (schedule/at-ms next tz) locale)}]
                         [:i18n :job/no-schedule])))]]])]))
      ;; The bottom of the sidebar: the settings, in place of the chat
      ;; when opened, and the languages.
@@ -604,11 +620,12 @@
 
 (defn views
   "On a phone the chat and the card take turns: two radios, the labels
-  are the tabs, the stylesheet shows one of the two."
-  []
+  are the tabs, the stylesheet shows one of the two. `made` is the
+  label of the card."
+  [made]
   [:nav.views
    [:label {:for "view-chat"} [:i18n :page/view-chat]]
-   [:label {:for "view-made"} [:i18n :page/view-made]]])
+   [:label {:for "view-made"} made]])
 
 (defn setup-banner
   "Above the chat while the agent's program is not there yet (see
@@ -673,8 +690,10 @@
   (let [chat (get chats id)
         files (:artifacts/list chat)
         skill (skills/by-name (:skills db) (:task chat))
-        picking? (and (seq (:skills db)) (nil? (:task chat)) (empty? (:items chat)))
-        card? (seq files)]
+        job? (some? job)
+        picking? (and (not job?) (seq (:skills db)) (nil? (:task chat)) (empty? (:items chat)))
+        ;; A job's page: the job beside its conversation, in place of the card.
+        card? (or job? (seq files))]
     [:div.pchat {:lang (some-> locale name)
                  :data-chat id}
      [:ui/url {:ui/path (if job (jobs/url (get-in job [:job :id])) (chats/url id))}]
@@ -692,13 +711,9 @@
         (migrate-banner migration)
         (settings-view db id)]
 
-       ;; The page of a job, see `pchat.jobs-view`.
-       job
-       (jobs-view/page job)
-
        :else
-       [:div.rchat {:replicant/key "chat"
-                    :class (when card? "with-card")}
+       [:div.rchat {:replicant/key (if job? "job" "chat")
+                    :class (str (when card? "with-card") (when job? " job-open"))}
         (when card?
           (list
            [:input#view-chat.toggle {:type "radio" :name "view" :default-checked "true"}]
@@ -710,11 +725,12 @@
           [:div.banner.note note])
         (header chat {:deleting deleting
                       :hook-open hook-open
-                      :task (some-> skill (skills/text :title locale))})
-        (when (= id hook-open)
+                      :task (some-> skill (skills/text :title locale))
+                      :job (:job job)})
+        (when (and (not job?) (= id hook-open))
           (hook-panel chat opts))
         (when card?
-          (views))
+          (views (if job? [:i18n :job/view-job] [:i18n :page/view-made])))
         [:div.body
          [:div.chat
           (if picking?
@@ -723,5 +739,7 @@
              (feed chat (some-> skill (intro locale)))
              (composer chat (assoc opts :placeholder (some-> skill (skills/text :placeholder locale))))))]
          (when card?
-           [:section.card
-            (artifacts/view chat (select-keys opts [:project :share]))])]])]))
+           [:section.card {:class (when job? "job")}
+            (if job?
+              (jobs-view/panel job)
+              (artifacts/view chat (select-keys opts [:project :share])))])]])]))

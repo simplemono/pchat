@@ -5,8 +5,16 @@
   and the person reviewed, and `job.edn`:
 
       {:id :name :state (:active or :paused) :schedule \"a cron line\" or nil
+       :schedule-text the words of the person the line came from, or nil
+       :tz the time zone the line is meant in, an IANA name, UTC without
+       :chat the id of the job's conversation (see `conversation!`)
        :token the key of the endpoint :caps {:cost-usd 1.0 :minutes 30}
        :failures runs failed in a row :created ms :last-run {:chat :state :at}}
+
+  The job's conversation is a chat of its own under `chats/`, where the
+  person set the job up (it begins with the history of the chat the job
+  came from) and comes back to change it; `template/` in its folder
+  links to the job's template. The job's page shows it beside the job.
 
   A run is a chat of its own (`pchat.chats`): the template is copied
   into a new chat folder, the agent gets `JOB.md` and what triggered
@@ -77,6 +85,28 @@
   "The address a service calls to start a run, with the key."
   [{:keys [id token]}]
   (str "/jobs/" id "/run?token=" token))
+
+(defn zone
+  "The java.time zone of a job (`:tz`, an IANA name); UTC when it has
+  none or an unknown one."
+  [{:keys [tz]}]
+  (try
+    (java.time.ZoneId/of (str (or (not-empty (str tz)) "UTC")))
+    (catch Exception _
+      (java.time.ZoneId/of "UTC"))))
+
+(defn now-in
+  "This minute in the zone."
+  [tz]
+  (-> (java.time.ZonedDateTime/now (zone {:tz tz}))
+      (.withSecond 0)
+      (.withNano 0)))
+
+(defn local-text
+  "A moment in the zone, `16 Oct 09:00`."
+  [ms ^java.time.ZoneId zone]
+  (.format (.atZone (java.time.Instant/ofEpochMilli ms) zone)
+           (java.time.format.DateTimeFormatter/ofPattern "d MMM HH:mm" java.util.Locale/ENGLISH)))
 
 (defn- new-token
   []
@@ -156,10 +186,45 @@
       (.isDirectory entry) (fs/copy-tree entry target {:replace-existing true})
       :else (fs/copy entry target {:replace-existing true}))))
 
+(defn- fork-session!
+  "The newest session file of the chat folder `from` as the
+  conversation's own: the same history under the conversation's id, so
+  that the agent there knows what the person wanted."
+  [from conversation-dir cid]
+  (when-let [file (->> (or (.listFiles (io/file from ".session")) [])
+                       (filter #(re-find #"_[0-9a-f-]{36}\.jsonl$" (.getName %)))
+                       (sort-by #(.getName %))
+                       (last))]
+    (let [[header & lines] (str/split-lines (slurp file))
+          parsed (try (json/parse-string header true) (catch Exception _ nil))]
+      (when (= "session" (:type parsed))
+        (let [header (json/generate-string (assoc parsed :id cid :cwd (str conversation-dir)))
+              prefix (subs (.getName file) 0 (- (count (.getName file)) 43))]
+          (spit (io/file conversation-dir ".session" (str prefix "_" cid ".jsonl"))
+                (str/join "\n" (cons header lines))))))))
+
+(defn conversation!
+  "The job's conversation: a chat of its own under chats/, named like
+  the job, with `template/` linked to the job's template and, when
+  `from` is a chat folder, the copy of its history. Answers the chat
+  id."
+  [workspace {:keys [id name]} from]
+  (let [cid (chats/new-id)
+        chats-dir (io/file workspace "chats")
+        dir (chats/dir chats-dir cid)]
+    (chats/create! workspace cid)
+    (fs/create-sym-link (io/file dir "template") (str "../../jobs/" id "/template"))
+    (chats/update-meta! chats-dir cid #(assoc % :name name :job id))
+    (when from
+      (fork-session! from dir cid))
+    cid))
+
 (defn create!
   "A job from a chat's folder: the folder copied as the template, an
-  empty prompt, a token for the endpoint. Answers the job."
-  [workspace {:keys [name from]}]
+  empty prompt, a token for the endpoint, the conversation with the
+  chat's history. `:tz` is the person's time zone, UTC without. Answers
+  the job."
+  [workspace {:keys [name from tz]}]
   (let [id (chats/new-id)
         template (template-dir workspace id)]
     (.mkdirs template)
@@ -171,19 +236,25 @@
         (fs/copy-tree entry (io/file template entry-name))
         (fs/copy entry (io/file template entry-name))))
     (set-prompt! workspace id "")
-    (write-job! workspace {:id id
-                           :name (or (not-empty (str/trim (str name))) "Job")
-                           :state :active
-                           :schedule nil
-                           :token (new-token)
-                           :caps default-caps
-                           :failures 0
-                           :created (System/currentTimeMillis)})))
+    (let [job {:id id
+               :name (or (not-empty (str/trim (str name))) "Job")
+               :state :active
+               :schedule nil
+               :schedule-text nil
+               :tz (if (str/blank? (str tz)) "UTC" (str tz))
+               :token (new-token)
+               :caps default-caps
+               :failures 0
+               :created (System/currentTimeMillis)}]
+      (write-job! workspace (assoc job :chat (conversation! workspace job from))))))
 
 (defn delete!
+  "The job and its conversation; the runs stay as chats."
   [workspace id]
   (let [dir (job-dir workspace id)]
     (when (and (chats/valid-id? id) (.isDirectory dir))
+      (when-let [cid (:chat (read-job workspace id))]
+        (chats/delete! (io/file workspace "chats") cid))
       (fs/delete-tree dir))))
 
 ;;; Cron: five fields, the minute of a day of a month of a weekday
@@ -226,7 +297,8 @@
   (some? (parse-cron text)))
 
 (defn due?
-  "Whether the cron line names this minute (UTC)."
+  "Whether the cron line names this minute, `at` in the zone the line
+  is meant in."
   [cron ^java.time.ZonedDateTime at]
   (when-let [[minutes hours days months weekdays] (parse-cron cron)]
     (and (contains? minutes (.getMinute at))
@@ -243,15 +315,27 @@
 
 (defn next-run
   "The first minute after `from` the cron line names, within a year, or
-  nil."
+  nil; `from` and the answer in the zone the line is meant in. A day or
+  an hour the line does not name is skipped whole."
   [cron from]
-  (when (valid-cron? cron)
-    (loop [at (.plusMinutes ^java.time.ZonedDateTime from 1)
-           n 0]
-      (cond
-        (due? cron at) at
-        (< n (* 366 24 60)) (recur (.plusMinutes at 1) (inc n))
-        :else nil))))
+  (when-let [[minutes hours days months weekdays] (parse-cron cron)]
+    (let [limit (.plusYears ^java.time.ZonedDateTime from 1)]
+      (loop [at (.plusMinutes ^java.time.ZonedDateTime from 1)]
+        (cond
+          (.isAfter at limit) nil
+
+          (not (and (contains? months (.getMonthValue at))
+                    (contains? days (.getDayOfMonth at))
+                    (contains? weekdays (mod (.getValue (.getDayOfWeek at)) 7))))
+          (recur (-> at (.plusDays 1) (.withHour 0) (.withMinute 0)))
+
+          (not (contains? hours (.getHour at)))
+          (recur (-> at (.plusHours 1) (.withMinute 0)))
+
+          (not (contains? minutes (.getMinute at)))
+          (recur (.plusMinutes at 1))
+
+          :else at)))))
 
 (defn minute-text
   [^java.time.ZonedDateTime at]
@@ -275,9 +359,12 @@
          :ticked (atom {})))
 
 (defn- with-next
-  "The job with `:next`, the text of its next scheduled minute."
-  [job now]
-  (assoc job :next (some-> (:schedule job) (next-run now) minute-text)))
+  "The job with `:next`, the milliseconds of its next scheduled minute."
+  [job ^java.time.ZonedDateTime now]
+  (assoc job :next (some-> (:schedule job)
+                           (next-run (.withZoneSameInstant now (zone job)))
+                           (.toInstant)
+                           (.toEpochMilli))))
 
 (defn load!
   "The jobs of the folders into the db, read again when their files
@@ -315,11 +402,20 @@
     (swap! db assoc-in [:jobs (:id job)] job)
     job))
 
+(defn ensure-conversation!
+  "The job with its conversation: one is made for a job from before
+  there were conversations, or whose chat folder went."
+  [{:keys [workspace] :as handle} job]
+  (if (and (:chat job)
+           (.isDirectory (chats/dir (io/file workspace "chats") (:chat job))))
+    job
+    (write! handle (assoc job :chat (conversation! workspace job nil)))))
+
 (defn- trigger-text
-  [{:keys [kind at cron payload]}]
+  [{:keys [kind at cron tz payload]}]
   (let [when-text (some-> at (java.time.Instant/ofEpochMilli) str)]
     (case kind
-      :schedule (str "The schedule " (pr-str cron) " came due at " when-text ".")
+      :schedule (str "The schedule " (pr-str cron) (when tz (str " (" tz ")")) " came due at " when-text ".")
       :endpoint (str "The job's endpoint was called at " when-text
                      (if (some? payload)
                        (str " with this body:\n\n```\n"
@@ -362,8 +458,8 @@
 (declare finish!)
 
 (defn- run-name
-  [{:keys [name]} at]
-  (str name " · " (minute-text (.atZone (java.time.Instant/ofEpochMilli at) java.time.ZoneOffset/UTC))))
+  [{:keys [name] :as job} at]
+  (str name " · " (local-text at (zone job))))
 
 (defn- begin!
   "The run: the chat folder from the template, the chat on the page,
@@ -474,14 +570,14 @@
       (finish! handle id :stopped :time))
     (when (not= :external clock)
       (let [minute (minute-text at)]
-        (doseq [{:keys [id schedule state]} (vals (:jobs @db))
+        (doseq [{:keys [id schedule state tz] :as job} (vals (:jobs @db))
                 :when (and (= :active state)
                            schedule
-                           (due? schedule at)
+                           (due? schedule (.withZoneSameInstant at (zone job)))
                            (not= minute (get @ticked id)))]
           (swap! ticked assoc id minute)
           (when-not (running handle id)
-            (start! handle id {:kind :schedule :cron schedule :at now})))))))
+            (start! handle id {:kind :schedule :cron schedule :tz tz :at now})))))))
 
 (defn watch!
   "The clock, once a minute, in the background."

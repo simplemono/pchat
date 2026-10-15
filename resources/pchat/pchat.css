@@ -1143,3 +1143,154 @@ html.theme-dark {
 .pchat .rchat .job .state.done {
   color: var(--rchat-ok);
 }
+
+/* The job beside its conversation on the job's page, see
+   pchat.jobs-view: in the card's place, scrolling by itself. */
+.pchat .rchat .card.job {
+  overflow-y: auto;
+  font-size: 14px;
+}
+
+.pchat .rchat .job h2 {
+  margin: 20px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--rchat-muted);
+}
+
+.pchat .rchat .job .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.pchat .rchat .job .actions .state {
+  font-weight: 600;
+}
+
+.pchat .rchat .job button.link {
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  color: var(--rchat-muted);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.pchat .rchat .job button.link:hover {
+  color: var(--rchat-text);
+}
+
+.pchat .rchat .job button.link.danger {
+  color: #b42318;
+}
+
+.pchat .rchat .job button.link.save {
+  color: var(--rchat-text);
+  font-weight: 600;
+}
+
+.pchat .rchat .job .note {
+  margin: 4px 0;
+  font-size: 13px;
+  color: var(--rchat-muted);
+}
+
+.pchat .rchat .job .error {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #b42318;
+}
+
+.pchat .rchat .job .schedule-now {
+  margin: 4px 0;
+  font-weight: 600;
+}
+
+.pchat .rchat .job code.cron {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--rchat-muted);
+}
+
+.pchat .rchat .job input.line,
+.pchat .rchat .job textarea.prompt,
+.pchat .rchat .job select {
+  display: block;
+  width: 100%;
+  margin: 6px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--rchat-line);
+  border-radius: 6px;
+  background: var(--rchat-bg);
+  font: inherit;
+  color: var(--rchat-text);
+}
+
+.pchat .rchat .job .actions input.line.endpoint {
+  flex: 1;
+  min-width: 200px;
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+
+.pchat .rchat .job textarea.prompt {
+  min-height: 160px;
+  resize: vertical;
+}
+
+.pchat .rchat .job .picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  font-size: 13px;
+}
+
+.pchat .rchat .job .proposal {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--rchat-line);
+  border-radius: 8px;
+  background: var(--rchat-panel);
+}
+
+.pchat .rchat .job .proposal p {
+  margin: 2px 0;
+}
+
+.pchat .rchat .job .zone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.pchat .rchat .job .zone select {
+  display: inline-block;
+  width: auto;
+  margin: 0;
+  padding: 2px 6px;
+  font-size: 13px;
+}
+
+.pchat .rchat .job table.runs {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.pchat .rchat .job table.runs td {
+  padding: 3px 12px 3px 0;
+  vertical-align: top;
+}
+
+.pchat .rchat .job table.runs .state.running {
+  color: #1c6b3a;
+}
+
+.pchat .rchat .job table.runs .state.failed {
+  color: #b42318;
+}

@@ -3,6 +3,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
+            [cheshire.core]
             [pchat.chats :as chats]
             [pchat.jobs :as jobs]))
 
@@ -37,7 +38,20 @@
     (is (= "2026-10-15 09:00Z" (jobs/minute-text (jobs/next-run "0 9 * * 1-5" (utc 2026 10 14 9 0)))))
     (is (= "2026-10-19 09:00Z" (jobs/minute-text (jobs/next-run "0 9 * * 1-5" (utc 2026 10 16 9 0)))) "over the weekend")
     (is (= "2026-10-14 14:45Z" (jobs/minute-text (jobs/next-run "*/15 * * * *" (utc 2026 10 14 14 31)))))
-    (is (= "2027-02-28 00:00Z" (jobs/minute-text (jobs/next-run "0 0 28 2 *" (utc 2026 3 1 0 0)))))))
+    (is (= "2027-02-28 00:00Z" (jobs/minute-text (jobs/next-run "0 0 28 2 *" (utc 2026 3 1 0 0)))))
+    (is (nil? (jobs/next-run "0 0 31 2 *" (utc 2026 3 1 0 0))) "a day that never comes, within a year"))
+  (testing "in a zone: the line means the zone's clock, across the change of the clocks"
+    (let [berlin (java.time.ZoneId/of "Europe/Berlin")
+          at (fn [y m d hh mm] (java.time.ZonedDateTime/of y m d hh mm 0 0 berlin))]
+      (is (= "2026-10-24T09:00+02:00[Europe/Berlin]" (str (jobs/next-run "0 9 * * *" (at 2026 10 23 9 0)))))
+      (is (= "2026-10-25T09:00+01:00[Europe/Berlin]" (str (jobs/next-run "0 9 * * *" (at 2026 10 24 9 0)))) "the clocks went back, 09:00 stays 09:00")
+      (is (= "UTC" (str (jobs/zone {:tz nil}))))
+      (is (= "UTC" (str (jobs/zone {:tz "Nowhere/Town"}))))
+      (is (= "Europe/Berlin" (str (jobs/zone {:tz "Europe/Berlin"})))))))
+
+(defn- pr-str-json
+  [value]
+  (cheshire.core/generate-string value))
 
 (defn- chat-folder!
   "A chat folder like `pchat.chats/create!` makes it, with a file in
@@ -74,13 +88,15 @@
   (let [workspace (temp-dir)
         chat-id (chats/new-id)
         from (chat-folder! workspace chat-id)
-        job (jobs/create! workspace {:name "Weekly card" :from (str from)})
-        template (jobs/template-dir workspace (:id job))]
+        job (jobs/create! workspace {:name "Weekly card" :from (str from) :tz "Europe/Berlin"})
+        template (jobs/template-dir workspace (:id job))
+        chats-dir (io/file workspace "chats")]
     (testing "the job's folder: the template is the chat's folder without its history"
       (is (chats/valid-id? (:id job)))
       (is (= "Weekly card" (:name job)))
       (is (= :active (:state job)))
       (is (nil? (:schedule job)))
+      (is (= "Europe/Berlin" (:tz job)))
       (is (re-matches #"[0-9a-f]{32}" (:token job)))
       (is (= {:cost-usd 1.0 :minutes 30} (:caps job)))
       (is (= "<h1>card</h1>" (slurp (io/file template "artifacts" "card.html"))))
@@ -93,6 +109,34 @@
       (is (not (.exists (io/file template "tmp"))))
       (is (= "" (jobs/prompt workspace (:id job))))
       (is (= job (jobs/read-job workspace (:id job))) "written as read"))
+    (testing "the conversation: a chat named like the job, the template linked, the history copied under its own id"
+      (let [cid (:chat job)
+            dir (chats/dir chats-dir cid)]
+        (is (chats/valid-id? cid))
+        (is (not= cid chat-id))
+        (is (= {:name "Weekly card" :job (:id job)} (chats/meta chats-dir cid)))
+        (is (fs/sym-link? (io/file dir "template")))
+        (is (= "notes" (slurp (io/file dir "template" "notes.md"))) "the link reaches the template")
+        (is (= "<h1>card</h1>" (slurp (io/file dir "template" "artifacts" "card.html"))))
+        (is (fs/sym-link? (io/file dir "bin")))
+        (is (empty? (.listFiles (io/file dir ".session"))) "the source chat's session file was no pi session, nothing to copy")))
+    (testing "the history of a chat with a pi session file comes along under the conversation's id"
+      (let [source (chats/new-id)
+            from (chat-folder! workspace source)
+            _ (spit (io/file from ".session" (str "2026-10-13T14-41-30-309Z_" source ".jsonl"))
+                    (str (pr-str-json {:type "session" :version 3 :id source :cwd (str from)}) "\n"
+                         (pr-str-json {:type "message" :id "m1" :message {:role "user" :content "Make a card"}}) "\n"))
+            job (jobs/create! workspace {:name "Forked" :from (str from)})
+            session-dir (chats/session-dir chats-dir (:chat job))
+            file (first (.listFiles session-dir))
+            [header line] (str/split-lines (slurp file))]
+        (is (= (str "2026-10-13T14-41-30-309Z_" (:chat job) ".jsonl") (.getName file)))
+        (is (str/includes? header (str "\"id\":\"" (:chat job) "\"")))
+        (is (str/includes? header "\"type\":\"session\""))
+        (is (str/includes? line "Make a card"))
+        (is (= "UTC" (:tz job)) "no zone given")
+        (is (.isFile (io/file from ".session" (str "2026-10-13T14-41-30-309Z_" source ".jsonl"))) "the source keeps its own")
+        (jobs/delete! workspace (:id job))))
     (testing "the prompt, the listing and the deletion"
       (jobs/set-prompt! workspace (:id job) "Make the card of the week.")
       (is (= "Make the card of the week." (jobs/prompt workspace (:id job))))
@@ -100,7 +144,24 @@
       (is (= "Make the card of the week." (:prompt (first (jobs/all workspace)))))
       (jobs/delete! workspace (:id job))
       (is (= [] (jobs/ids workspace)))
-      (is (nil? (jobs/read-job workspace (:id job)))))))
+      (is (nil? (jobs/read-job workspace (:id job))))
+      (is (not (.exists (chats/dir chats-dir (:chat job)))) "the conversation went with the job")
+      (is (.exists from) "the source chat stays"))))
+
+(deftest ensure-conversation-test
+  (let [workspace (temp-dir)
+        handle (handle! workspace)
+        from (chat-folder! workspace (chats/new-id))
+        job (jobs/create! workspace {:name "Old" :from (str from)})]
+    (jobs/load! handle)
+    (testing "a job from before the conversations gets one on demand, once"
+      (jobs/write! handle (dissoc (jobs/job handle (:id job)) :chat))
+      (is (nil? (:chat (jobs/read-job workspace (:id job)))))
+      (let [{:keys [chat]} (jobs/ensure-conversation! handle (jobs/job handle (:id job)))]
+        (is (chats/valid-id? chat))
+        (is (= chat (:chat (jobs/read-job workspace (:id job)))))
+        (is (= chat (:chat (jobs/ensure-conversation! handle (jobs/job handle (:id job))))))
+        (is (= {:name "Old" :job (:id job)} (chats/meta (io/file workspace "chats") chat)))))))
 
 (deftest first-message-test
   (let [job {:prompt "Make the card.\n"}]
@@ -204,7 +265,7 @@
         (jobs/load! handle2)
         (is (= :active (get-in @(:db handle2) [:jobs id :state])))
         (is (= "Make the card." (get-in @(:db handle2) [:jobs id :prompt])))
-        (is (string? (get-in @(:db handle2) [:jobs id :next])))))))
+        (is (number? (get-in @(:db handle2) [:jobs id :next])))))))
 
 (deftest schedule-test
   (let [workspace (temp-dir)
@@ -213,8 +274,7 @@
         {:keys [id]} (jobs/create! workspace {:name "Nine" :from (str from)})]
     (jobs/load! handle)
     (jobs/write! handle (assoc (jobs/job handle id) :schedule "0 9 * * 1-5"))
-    (is (= "2026-10-15 09:00Z" (get-in @db [:jobs id :next])) "if the test ran on 2026-10-14; else at least a text"
-        )
+    (is (number? (get-in @db [:jobs id :next])) "the next run as milliseconds")
     (testing "a due minute starts a run once"
       (jobs/tick! handle (utc 2026 10 14 8 59))
       (is (= 0 (count @sent)))
@@ -230,7 +290,15 @@
     (testing "with the external clock nothing fires; the endpoint is the way"
       (jobs/write! handle (assoc (jobs/job handle id) :state :active))
       (jobs/tick! (assoc handle :clock :external) (utc 2026 10 16 9 0))
-      (is (= 1 (count @sent))))))
+      (is (= 1 (count @sent))))
+    (testing "in the job's zone: 9:00 in Berlin is 7:00 UTC in October"
+      (jobs/finish! handle (:id (first (jobs/runs-of handle id))) :done)
+      (jobs/write! handle (assoc (jobs/job handle id) :tz "Europe/Berlin"))
+      (jobs/tick! handle (utc 2026 10 19 9 0))
+      (is (= 1 (count @sent)) "not at 9:00 UTC")
+      (jobs/tick! handle (utc 2026 10 19 7 0))
+      (is (= 2 (count @sent)) "at 7:00 UTC")
+      (is (= "Europe/Berlin" (-> (jobs/runs-of handle id) first :run :trigger :tz))))))
 
 (deftest endpoint-test
   (let [workspace (temp-dir)

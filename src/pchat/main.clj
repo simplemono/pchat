@@ -29,6 +29,7 @@
             [pchat.hooks :as hooks]
             [pchat.jobs :as jobs]
             [pchat.i18n :as i18n]
+            [pchat.schedule :as schedule]
             [pchat.looks :as looks]
             [pchat.mcp :as mcp]
             [pchat.migrate :as migrate]
@@ -251,7 +252,7 @@
   "What the sidebar needs of a chat, from its folder: its session file
   when it has one, the name and the task the person gave it."
   [id]
-  (let [{:keys [name task run]} (chats/meta chats-dir id)
+  (let [{:keys [name task run job]} (chats/meta chats-dir id)
         file (first (session/files (chats/session-dir chats-dir id)))
         made (.lastModified (chats/dir chats-dir id))]
     (-> (merge chat/empty-chat
@@ -261,8 +262,9 @@
                  (session/summary file))
                (when name {:name name})
                (when task {:task task})
-               ;; A run of a job (see `pchat.jobs`).
-               (when run {:run run}))
+               ;; A run of a job, or the conversation of one (see `pchat.jobs`).
+               (when run {:run run})
+               (when job {:job job}))
         (assoc :id id))))
 
 (defn- new!
@@ -290,7 +292,8 @@
                      [id (chat-summary id)]))))
     (hooks/load! hooks)
     (share/load! shares)
-    (when (empty? (:chats @db))
+    ;; The conversations of the jobs live on the jobs' pages, not in the list.
+    (when (empty? (remove :job (vals (:chats @db))))
       (new!))))
 
 (defn- ensure-loaded!
@@ -412,8 +415,9 @@
 (defn- system-prompt
   "system.md, the skills paragraph (the chat's task in full, see
   `pchat.skills/prompt`), the integrations paragraph when a connection
-  with Composio's connection tools exists (a Storrito agent's own), and
-  the webhook paragraph."
+  with Composio's connection tools exists (a Storrito agent's own), the
+  webhook paragraph, and for the conversation of a job the job
+  paragraph (job.md, see `pchat.jobs`)."
   [id]
   (str (slurp (io/resource "pchat/prompts/system.md"))
        (some->> (skills/prompt (:skills @db) (get-in @db [:chats id :task]))
@@ -421,7 +425,12 @@
        (when-let [names (seq (mcp/composio-connections connections))]
          (str "\n\n" (str/replace (slurp (io/resource "pchat/prompts/integrations.md"))
                                   "<connection>" (str/join ", " names))))
-       "\n\n" (hooks/prompt)))
+       "\n\n" (hooks/prompt)
+       (when-let [job (some->> (get-in @db [:chats id :job]) (jobs/job jobs))]
+         (str "\n\n" (-> (slurp (io/resource "pchat/prompts/job.md"))
+                         (str/replace "<id>" (str (:id job)))
+                         (str/replace "<name>" (str (:name job)))
+                         (str/replace "<tz>" (str (:tz job "UTC"))))))))
 
 (defn- chat-env
   "The environment of a chat's processes: the tools, the shared scripts
@@ -631,8 +640,10 @@
                 (command/accepted w)))))
 
 (defn- newest-chat-id
+  "The newest chat of the list; the conversations of the jobs are not
+  in it."
   [db]
-  (:id (first (sort-by #(or (:updated %) 0) > (vals (:chats db))))))
+  (:id (first (sort-by #(or (:updated %) 0) > (remove :job (vals (:chats db)))))))
 
 (defn- task-link
   "GET /task/<skill> (or /task/free): the way in from elsewhere, e.g. a
@@ -888,36 +899,53 @@
       (command/rejected w (say w [:i18n :command/no-such-chat])))))
 
 (defn- job-show-command
-  "The tab shows the job's page from now on."
+  "The tab shows the job's page from now on: the job's conversation as
+  the chat, the job beside it."
   [w]
   (let [{:keys [id tab]} (command/command-data w)
-        tab (str tab)]
+        tab (str tab)
+        job (jobs/job jobs id)]
     (cond
       (str/blank? tab) (command/rejected w (say w [:i18n :command/no-such-tab]))
-      (not (jobs/job jobs id)) (command/rejected w (say w [:i18n :command/no-such-job]))
-      :else (do (swap! db #(-> %
-                               (assoc-in [:job-tabs tab] id)
-                               (update :tabs dissoc tab)
-                               (dissoc :deleting :deleting-job :hook-open :settings-open)))
-                (command/accepted w)))))
+      (nil? job) (command/rejected w (say w [:i18n :command/no-such-job]))
+      :else (let [{:keys [chat]} (jobs/ensure-conversation! jobs job)]
+              (load-chats!)
+              (swap! db #(-> %
+                             (assoc-in [:job-tabs tab] id)
+                             (assoc-in [:tabs tab] chat)
+                             (dissoc :deleting :deleting-job :hook-open :settings-open)))
+              (command/accepted w)))))
 
 (defn- job-turn-command
-  "The button in the header: the agent is asked to turn the chat into a
-  job, in the language of the page; it knows the steps from its prompt."
+  "The button in the header: the chat becomes a job, with the chat's
+  folder as the template and a copy of the chat as the job's
+  conversation (see `pchat.jobs/create!`). The tab shows the job, and
+  the conversation's agent is asked to write the prompt and to ask when
+  the job should run, in the language of the page; `:tz` is the
+  browser's time zone, the job's from now on."
   [w]
-  (let [{:keys [id]} (command/command-data w)
-        message (say w [:i18n :job/turn-message])]
+  (let [{:keys [id tab tz]} (command/command-data w)
+        tab (str tab)
+        chat (get-in @db [:chats id])]
     (cond
-      (not (get-in @db [:chats id]))
-      (command/rejected w (say w [:i18n :command/no-such-chat]))
-
-      (not (setup/ready? (setup/refresh! setup)))
-      (do (keep! id message [] (setup/not-ready-message (:pi (:setup @db))))
-          (command/accepted w))
-
+      (nil? chat) (command/rejected w (say w [:i18n :command/no-such-chat]))
+      (str/blank? tab) (command/rejected w (say w [:i18n :command/no-such-tab]))
       :else
-      (do (send! id message nil)
-          (command/accepted w)))))
+      (let [name (let [n (view/chat-name chat)] (if (string? n) n (say w n)))
+            tz (if (schedule/valid-zone? (str tz)) (str tz) "UTC")
+            job (jobs/create! workspace {:name name :from (str (chats/dir chats-dir id)) :tz tz})
+            cid (:chat job)
+            message (say w [:i18n :job/first-message {:name name :tz tz}])]
+        (jobs/load! jobs)
+        (load-chats!)
+        (swap! db #(-> %
+                       (assoc-in [:job-tabs tab] (:id job))
+                       (assoc-in [:tabs tab] cid)
+                       (dissoc :deleting :hook-open :settings-open)))
+        (if (setup/ready? (setup/refresh! setup))
+          (send! cid message nil)
+          (keep! cid message [] (setup/not-ready-message (:pi (:setup @db)))))
+        (command/accepted w)))))
 
 (defn- job-run-command
   [w]
@@ -947,21 +975,100 @@
           (command/accepted w))
       (command/rejected w (say w [:i18n :command/no-such-job])))))
 
-(defn- job-schedule-command
-  "The cron line from the job's page; empty is no schedule."
+(defn- job-words-command
+  "The person's words for when the job runs, from its page: nothing
+  turns the schedule off, a cron line is taken as it is, anything else
+  goes to the model (see `pchat.schedule`); the answer shows under the
+  field as a proposal, which the next command saves. `:tz` is the
+  browser's zone, the job's from now on when it had none."
   [w]
-  (let [{:keys [id cron]} (command/command-data w)
-        cron (str/trim (str cron))
+  (let [{:keys [id text tz]} (command/command-data w)
+        job (jobs/job jobs id)
+        locale (i18n/locale (:ring/request w))
+        text (str/trim (str text))]
+    (cond
+      (nil? job)
+      (command/rejected w (say w [:i18n :command/no-such-job]))
+
+      (str/blank? text)
+      (do (jobs/write! jobs (assoc job :schedule nil :schedule-text nil))
+          (swap! db update :jobs/proposal dissoc id)
+          (command/accepted w))
+
+      :else
+      (let [job (if (and (str/blank? (str (:tz job))) (schedule/valid-zone? (str tz)))
+                  (jobs/write! jobs (assoc job :tz (str tz)))
+                  job)
+            key (System/getenv "OPENROUTER_API_KEY")]
+        (swap! db assoc-in [:jobs/proposal id] {:text text :pending true})
+        (future
+          (let [result (schedule/words->cron {:text text
+                                              :tz (:tz job "UTC")
+                                              :locale locale
+                                              :key key
+                                              :model model})]
+            (swap! db update :jobs/proposal
+                   (fn [proposals]
+                     ;; Only while these are still the words asked about.
+                     (if (= text (get-in proposals [id :text]))
+                       (assoc proposals id (assoc result :text text))
+                       proposals)))))
+        (command/accepted w)))))
+
+(defn- job-schedule-save-command
+  "The proposal under the field becomes the job's schedule."
+  [w]
+  (let [{:keys [id]} (command/command-data w)
+        job (jobs/job jobs id)
+        {:keys [cron text pending error]} (get-in @db [:jobs/proposal id])]
+    (cond
+      (nil? job) (command/rejected w (say w [:i18n :command/no-such-job]))
+      (or pending error (nil? cron)) (command/rejected w (say w [:i18n :job/not-understood]))
+      :else (do (jobs/write! jobs (assoc job :schedule cron :schedule-text text))
+                (swap! db update :jobs/proposal dissoc id)
+                (command/accepted w)))))
+
+(defn- job-schedule-cancel-command
+  [w]
+  (let [{:keys [id]} (command/command-data w)]
+    (swap! db update :jobs/proposal dissoc id)
+    (command/accepted w)))
+
+(defn- job-schedule-off-command
+  [w]
+  (let [{:keys [id]} (command/command-data w)]
+    (if-let [job (jobs/job jobs id)]
+      (do (jobs/write! jobs (assoc job :schedule nil :schedule-text nil))
+          (swap! db update :jobs/proposal dissoc id)
+          (command/accepted w))
+      (command/rejected w (say w [:i18n :command/no-such-job])))))
+
+(defn- job-tz-command
+  "The job's time zone from the page; the schedule keeps its line and
+  means the new zone's clock from now on."
+  [w]
+  (let [{:keys [id tz]} (command/command-data w)
         job (jobs/job jobs id)]
     (cond
       (nil? job) (command/rejected w (say w [:i18n :command/no-such-job]))
-      (str/blank? cron) (do (jobs/write! jobs (assoc job :schedule nil))
-                            (swap! db update :jobs/error dissoc id)
-                            (command/accepted w))
-      (not (jobs/valid-cron? cron)) (do (swap! db assoc-in [:jobs/error id] [:i18n :job/schedule-bad])
-                                        (command/accepted w))
-      :else (do (jobs/write! jobs (assoc job :schedule cron))
-                (swap! db update :jobs/error dissoc id)
+      (not (schedule/valid-zone? (str tz))) (command/rejected w (say w [:i18n :command/bad-zone]))
+      :else (do (jobs/write! jobs (assoc job :tz (str tz)))
+                (command/accepted w)))))
+
+(defn- job-rename-command
+  "The name in the header of the job's page: the job and its
+  conversation."
+  [w]
+  (let [{:keys [id name]} (command/command-data w)
+        job (jobs/job jobs id)
+        name (str/trim (str name))]
+    (cond
+      (nil? job) (command/rejected w (say w [:i18n :command/no-such-job]))
+      (str/blank? name) (command/accepted w)
+      :else (do (jobs/write! jobs (assoc job :name name))
+                (when-let [cid (:chat job)]
+                  (chats/update-meta! chats-dir cid #(assoc % :name name))
+                  (swap! db assoc-in [:chats cid :name] name))
                 (command/accepted w)))))
 
 (defn- job-delete-command
@@ -1026,9 +1133,15 @@
        :missing wanted})))
 
 (defn page-view
-  "The page in the language of the connection, with the chat of the tab."
+  "The page in the language of the connection, with the chat of the
+  tab; on a job's page the chat is the job's conversation."
   [w]
-  (let [{:keys [id missing]} (shown-chat @db w)]
+  (let [job-id (shown-job @db w)
+        {:keys [id missing]} (if job-id
+                               {:id (:chat (jobs/ensure-conversation! jobs (get-in @db [:jobs job-id])))}
+                               (shown-chat @db w))]
+    (when (and job-id (not (get-in @db [:chats id])))
+      (load-chats!))
     (ensure-loaded! id)
     (when-not (contains? (get-in @db [:chats id]) :artifacts/list)
       (artifacts/refresh! artifacts id))
@@ -1037,16 +1150,16 @@
     (let [value @db
           chat (get-in value [:chats id])
           locale (i18n/locale (:ring/request w))
-          base-url (share/base-url (:ring/request w))
-          job-id (shown-job value w)]
+          base-url (share/base-url (:ring/request w))]
       (-> (view/page value {:id id
                             :job (when job-id
                                    {:job (get-in value [:jobs job-id])
                                     :runs (jobs/runs-of jobs job-id)
                                     :endpoint (str base-url (jobs/endpoint-path (get-in value [:jobs job-id])))
                                     :clock (:clock jobs)
-                                    :error (get-in value [:jobs/error job-id])
-                                    :deleting (:deleting-job value)})
+                                    :proposal (get-in value [:jobs/proposal job-id])
+                                    :deleting (:deleting-job value)
+                                    :locale locale})
                             :note (when missing [:i18n :chat/missing])
                             :key-missing? key-missing?
                             :locale locale
@@ -1222,8 +1335,18 @@
     :command/fn (fn [w] (job-state-command w :active))}
    {:command/kind :job/prompt
     :command/fn #'job-prompt-command}
-   {:command/kind :job/schedule
-    :command/fn #'job-schedule-command}
+   {:command/kind :job/words
+    :command/fn #'job-words-command}
+   {:command/kind :job/schedule-save
+    :command/fn #'job-schedule-save-command}
+   {:command/kind :job/schedule-cancel
+    :command/fn #'job-schedule-cancel-command}
+   {:command/kind :job/schedule-off
+    :command/fn #'job-schedule-off-command}
+   {:command/kind :job/tz
+    :command/fn #'job-tz-command}
+   {:command/kind :job/rename
+    :command/fn #'job-rename-command}
    {:command/kind :job/delete
     :command/fn #'job-delete-command}
    {:command/kind :job/keep

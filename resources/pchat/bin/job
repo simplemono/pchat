@@ -7,16 +7,23 @@
 ;;   bin/job list                       the jobs
 ;;   bin/job show <id>                  one job: prompt, schedule, endpoint, last run
 ;;   bin/job prompt <id>  < JOB.md      the prompt of the job, from standard input
-;;   bin/job schedule <id> "<cron>"     when it runs: five fields, minute hour day month weekday, UTC
+;;   bin/job schedule <id> "<cron>" [<zone>]   when it runs: five fields, minute hour day month
+;;                                      weekday, in the zone (an IANA name like Europe/Berlin;
+;;                                      the job's own zone when left out)
 ;;   bin/job schedule <id> off          no schedule, the endpoint and Run now only
+;;   bin/job tz <id> <zone>             the job's time zone
+;;   bin/job rename <id> <name>
 ;;   bin/job run <id>                   a run now
 ;;   bin/job pause <id> | resume <id>
-;;   bin/job delete <id>                the job; its runs stay as chats
+;;   bin/job delete <id>                the job and its conversation; its runs stay as chats
 ;;
 ;; Every run is a chat of its own, made from the template, with JOB.md and
 ;; what triggered the run as its first message. A job has an endpoint,
 ;; POST <this pchat>/jobs/<id>/run?token=…, which a service calls to start
 ;; a run; the body of the call, JSON as a rule, reaches the agent as text.
+;; A job also has a conversation, a chat that begins as a copy of the chat
+;; it was made from and lives on the job's page: there the person changes
+;; the job.
 (require '[babashka.classpath :refer [add-classpath]]
          '[babashka.fs :as fs]
          '[babashka.http-client :as http]
@@ -60,8 +67,15 @@
     (if external-clock?
       (str "This machine sleeps between requests and does not keep time by itself: the schedule fires when its owner calls the endpoint at the time. "
            "Register it there: search the connected services for a tool that registers a schedule for a URL (the job id " (:id job)
-           ", the cron line " (pr-str schedule) ", the URL " (endpoint job) ", the token " (:token job) "); without that tool, the person has to arrange the call.")
-      "pchat fires the schedule itself, every minute it checks what is due (UTC).")))
+           ", the cron line " (pr-str schedule) ", the time zone " (:tz job "UTC") ", the URL " (endpoint job) ", the token " (:token job) "); without that tool, the person has to arrange the call.")
+      (str "pchat fires the schedule itself, every minute it checks what is due, in the job's time zone (" (:tz job "UTC") ")."))))
+
+(defn next-text
+  [{:keys [schedule tz]}]
+  (some-> (jobs/next-run schedule (jobs/now-in tz))
+          (.toInstant)
+          (.toEpochMilli)
+          (jobs/local-text (jobs/zone {:tz tz}))))
 
 (defn create!
   [name]
@@ -70,15 +84,15 @@
   (when-not (fs/exists? (fs/path chat-dir ".session"))
     (fail "Run bin/job from inside a chat's folder: the folder becomes the template."))
   (let [job (jobs/create! workspace {:name name :from (str chat-dir)})]
-    (println (str "Made the job " (:name job) " (" (:id job) ") with this chat's folder as its template."))
-    (println (str "Next: write its prompt with  bin/job prompt " (:id job) " <<'EOF' … EOF  (what to do each time, which template, what to publish where, what to leave alone), ask the person to review it on the job's page " (jobs/url (:id job)) ", then set the trigger: bin/job schedule " (:id job) " \"<cron>\", or give the person the endpoint: " (endpoint job)))))
+    (println (str "Made the job " (:name job) " (" (:id job) ") with this chat's folder as its template. Its conversation, a copy of this chat, lives on the job's page " (jobs/url (:id job)) "; the person continues there."))
+    (println (str "Next: write its prompt with  bin/job prompt " (:id job) " <<'EOF' … EOF  (what to do each time, which template, what to publish where, what to leave alone), ask the person to review it on the job's page, then set the trigger: bin/job schedule " (:id job) " \"<cron>\" <zone> (the person's time zone), or give the person the endpoint: " (endpoint job)))))
 
 (defn show!
   [id]
   (let [{:keys [name state schedule failures last-run caps] :as job} (job-or-fail id)
         prompt (jobs/prompt workspace id)]
     (println (str name " (" id "): " (clojure.core/name state)
-                  (when schedule (str ", schedule " (pr-str schedule) ", next " (jobs/minute-text (jobs/next-run schedule (jobs/now-utc)))))
+                  (when schedule (str ", schedule " (pr-str schedule) " in " (:tz job "UTC") ", next " (next-text job)))
                   ", caps $" (:cost-usd caps) " and " (:minutes caps) " minutes per run"
                   (when (pos? (or failures 0)) (str ", " failures " failed in a row"))))
     (println (str "Endpoint: " (endpoint job)))
@@ -106,22 +120,45 @@
     (jobs/set-prompt! workspace id text)
     (println (str "The prompt of " id " is set, " (count (str/split-lines text)) " lines. The person reviews it on " (jobs/url id) "."))))
 
+(defn valid-zone?
+  [zone]
+  (try (java.time.ZoneId/of zone) true (catch Exception _ false)))
+
 (defn schedule!
-  [id cron]
+  [id cron zone]
   (let [job (job-or-fail id)]
     (cond
       (= "off" cron)
-      (do (jobs/write-job! workspace (assoc job :schedule nil))
+      (do (jobs/write-job! workspace (assoc job :schedule nil :schedule-text nil))
           (println (str "No schedule for " id " anymore; the endpoint and Run now remain.")))
 
       (not (jobs/valid-cron? cron))
-      (fail (str "Not a cron line: " (pr-str cron) ". Five fields: minute hour day month weekday, for example \"0 9 * * 1-5\" (weekdays at 9:00 UTC) or \"*/30 * * * *\" (every half hour)."))
+      (fail (str "Not a cron line: " (pr-str cron) ". Five fields: minute hour day month weekday, for example \"0 9 * * 1-5\" (weekdays at 9:00) or \"*/30 * * * *\" (every half hour)."))
+
+      (and zone (not (valid-zone? zone)))
+      (fail (str "Not a time zone: " (pr-str zone) ". An IANA name like Europe/Berlin or America/New_York."))
 
       :else
-      (let [job (jobs/write-job! workspace (assoc job :schedule cron))]
-        (println (str "The schedule of " id " is " (pr-str cron) ", next " (jobs/minute-text (jobs/next-run cron (jobs/now-utc))) " (UTC)."))
+      (let [job (jobs/write-job! workspace (assoc job :schedule cron :schedule-text nil :tz (or zone (:tz job) "UTC")))]
+        (println (str "The schedule of " id " is " (pr-str cron) " in " (:tz job) ", next " (next-text job) "."))
         (println (str "Endpoint: " (endpoint job)))
         (println (schedule-note job))))))
+
+(defn tz!
+  [id zone]
+  (let [job (job-or-fail id)]
+    (when-not (valid-zone? zone)
+      (fail (str "Not a time zone: " (pr-str zone) ". An IANA name like Europe/Berlin or America/New_York.")))
+    (let [job (jobs/write-job! workspace (assoc job :tz zone))]
+      (println (str "The time zone of " id " is " zone
+                    (when (:schedule job) (str "; the schedule " (pr-str (:schedule job)) " now means next " (next-text job)))
+                    ".")))))
+
+(defn rename!
+  [id name]
+  (let [job (job-or-fail id)]
+    (jobs/write-job! workspace (assoc job :name name))
+    (println (str "The job " id " is called " name " now."))))
 
 (defn run!
   [id]
@@ -143,7 +180,7 @@
     (println (str (:name job) " is " (name state) "."))))
 
 (def usage
-  "bin/job create <name> | list | show <id> | prompt <id> | schedule <id> \"<cron>\"|off | run <id> | pause <id> | resume <id> | delete <id>")
+  "bin/job create <name> | list | show <id> | prompt <id> | schedule <id> \"<cron>\" [<zone>] | schedule <id> off | tz <id> <zone> | rename <id> <name> | run <id> | pause <id> | resume <id> | delete <id>")
 
 (let [[command id & args] *command-line-args*]
   (case command
@@ -152,9 +189,11 @@
     "list" (list!)
     "show" (if (str/blank? id) (fail "bin/job show <id>") (show! id))
     "prompt" (if (str/blank? id) (fail "bin/job prompt <id> < JOB.md") (prompt! id))
-    "schedule" (if (or (str/blank? id) (str/blank? (first args))) (fail "bin/job schedule <id> \"<cron>\" | off") (schedule! id (first args)))
+    "schedule" (if (or (str/blank? id) (str/blank? (first args))) (fail "bin/job schedule <id> \"<cron>\" [<zone>] | off") (schedule! id (first args) (second args)))
+    "tz" (if (or (str/blank? id) (str/blank? (first args))) (fail "bin/job tz <id> <zone>") (tz! id (first args)))
+    "rename" (if (or (str/blank? id) (str/blank? (str/join " " args))) (fail "bin/job rename <id> <name>") (rename! id (str/join " " args)))
     "run" (if (str/blank? id) (fail "bin/job run <id>") (run! id))
     "pause" (if (str/blank? id) (fail "bin/job pause <id>") (set-state! id :paused))
     "resume" (if (str/blank? id) (fail "bin/job resume <id>") (set-state! id :active))
-    "delete" (if (str/blank? id) (fail "bin/job delete <id>") (do (job-or-fail id) (jobs/delete! workspace id) (println (str "Deleted the job " id "; its runs stay as chats."))))
+    "delete" (if (str/blank? id) (fail "bin/job delete <id>") (do (job-or-fail id) (jobs/delete! workspace id) (println (str "Deleted the job " id " and its conversation; its runs stay as chats."))))
     (fail usage)))

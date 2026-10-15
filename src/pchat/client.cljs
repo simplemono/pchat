@@ -475,7 +475,13 @@
            {:ui.action-enricher/kind :pchat/tabid
             :ui.action-enricher/fn (fn [{:keys [ui.action/x]}]
                                      (when (= :pchat/tabid x)
-                                       state/tabid))}]))
+                                       state/tabid))}
+           ;; `:pchat/timezone` in a command, the browser's time zone
+           ;; (`Europe/Berlin`): a job's schedule is meant in it.
+           {:ui.action-enricher/kind :pchat/timezone
+            :ui.action-enricher/fn (fn [{:keys [ui.action/x]}]
+                                     (when (= :pchat/timezone x)
+                                       (.. js/Intl (DateTimeFormat) (resolvedOptions) -timeZone)))}]))
 
 (defn init!
   []
