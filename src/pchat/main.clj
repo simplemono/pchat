@@ -29,6 +29,7 @@
             [clojure.string :as str]
             [org.httpkit.server :as server]
             [pchat.artifacts :as artifacts]
+            [pchat.awake :as awake]
             [pchat.chat :as chat]
             [pchat.chats :as chats]
             [pchat.hooks :as hooks]
@@ -1161,6 +1162,8 @@
   (watch-connections!)
   (setup/watch! setup)
   (update/watch! updater)
+  ;; On a Sprite: no pause while a chat works or a video renders.
+  (awake/watch! #(not (idle?)))
   (.addShutdownHook (Runtime/getRuntime) (Thread. #(do (projects/stop-all! projects)
                                                        (render/stop-all! renders)
                                                        (hooks/stop-all! hooks))))
