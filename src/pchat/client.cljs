@@ -452,4 +452,8 @@
   []
   (swap! state/store assoc :pchat/theme (stored-theme))
   (watch-chat-links!)
-  (rframes/init! {:register register}))
+  ;; The commands go to /command whatever the page's path: rframes
+  ;; posts them next to the page, which for a page opened at
+  ;; /chat/<id> would be /chat/command, nothing.
+  (rframes/init! {:register register
+                  :ui/command-endpoint "/command"}))
