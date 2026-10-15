@@ -34,6 +34,7 @@
             [pchat.chats :as chats]
             [pchat.hooks :as hooks]
             [pchat.i18n :as i18n]
+            [pchat.background :as background]
             [pchat.looks :as looks]
             [pchat.mcp :as mcp]
             [pchat.migrate :as migrate]
@@ -129,10 +130,12 @@
                   :on-finish (fn [id _name] (artifacts/refollow! artifacts id))}))
 
 (defn- idle?
-  "No chat works and no video renders: the moment the process may end."
+  "No chat works, no video renders and no task of `bin/background` runs:
+  the moment the process may end."
   []
   (and (every? #(= :idle (:status %)) (vals (:chats @db)))
-       (not (render/any-running? renders))))
+       (not (render/any-running? renders))
+       (not (background/running? chats-dir (keys (:chats @db))))))
 
 (def updater
   (update/handle {:db db
@@ -188,7 +191,8 @@
    "bin/voice"
    "bin/ask"
    "bin/mcp"
-   "bin/migrate-chats"])
+   "bin/migrate-chats"
+   "bin/background"])
 
 (def lib-files
   "Namespaces of pchat the scripts load from .pchat/lib: `bin/mcp` edits
@@ -538,6 +542,20 @@
       :else
       (do (send! id message images)
           (command/accepted w)))))
+
+(defn- watch-background!
+  "Every two seconds: a task of `bin/background` that has ended is told to
+  its chat's agent, which goes on with what it started it for."
+  []
+  (future
+    (loop []
+      (Thread/sleep 2000)
+      (try
+        (background/report-ended! chats-dir (keys (:chats @db)) (fn [id text] (send! id text [])) (now))
+        (catch Exception e
+          (binding [*out* *err*]
+            (println "[background]" (str e)))))
+      (recur))))
 
 (defn- abort-command
   [w]
@@ -1159,6 +1177,7 @@
   (poll-artifacts!)
   (sync-projects!)
   (reap-idle-pis!)
+  (watch-background!)
   (watch-connections!)
   (setup/watch! setup)
   (update/watch! updater)
