@@ -801,6 +801,24 @@ html.theme-dark {
   border-color: var(--rchat-text);
 }
 
+/* a choice of several: a checkbox or a radio button with its label */
+.rchat .genui label:has(input) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  cursor: pointer;
+}
+
+.rchat .genui input[type="checkbox"],
+.rchat .genui input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--rchat-text);
+  cursor: pointer;
+}
+
 .rchat .genui ul {
   padding-left: 0;
   list-style: none;

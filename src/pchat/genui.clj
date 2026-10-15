@@ -1,7 +1,8 @@
 (ns pchat.genui
   "Hiccup the agent writes into an answer, shown as a part of the page: a
   list of pieces of music with a player each, a choice as buttons, a
-  picture. A ```hiccup block in the markdown holds EDN hiccup,
+  picture, a choice of several as checkboxes. A ```hiccup block in the
+  markdown holds EDN hiccup,
 
       ```hiccup
       [:div [:p \"Which one?\"]
@@ -13,7 +14,10 @@
   does with JSON. The agent writes data, never markup: only the tags and
   attributes in the allow-lists get through, a link or a file points at
   the chat's own files or at https, `:send` on a button sends its text
-  as the person's next message, `:open` shows an artifact. The agent
+  as the person's next message, `:open` shows an artifact. An input is a
+  checkbox or a radio button, nothing else; `{checked}` in the text of
+  a `:send` becomes the values of the inputs ticked in the block when
+  the button is clicked (the browser fills it in, `pchat.client`). The agent
   names its files as it sees them, `/artifacts/card/music.mp3`, and the
   page serves them under the chat, `/chat/<id>/artifacts/...`: `opts`
   of `children`, `block` and `sanitize` carry the `:id` of the chat. A
@@ -25,11 +29,21 @@
 (def tags
   #{:div :span :p :ul :ol :li :strong :em :b :i :s :small :h1 :h2 :h3 :h4 :a
     :img :audio :video :button :table :thead :tbody :tr :th :td :figure
-    :figcaption :code :pre :br :hr :blockquote :label})
+    :figcaption :code :pre :br :hr :blockquote :label :input})
 
 (def attributes
   #{:class :href :src :poster :title :alt :controls :preload :loop :muted
-    :width :height :colspan :rowspan :download :style :send :open})
+    :width :height :colspan :rowspan :download :style :send :open
+    :type :name :value :checked :disabled})
+
+(def input-types
+  "What an input may be: a choice, never a field that takes text."
+  #{"checkbox" "radio"})
+
+(def checked
+  "In the text a button sends: the values of the inputs ticked in its
+  block, filled in by the browser at the click."
+  "{checked}")
 
 (def urls
   "Where a link, a file or a picture may point, besides the chat's own
@@ -68,10 +82,15 @@
             [k v]))))
 
 (defn- send-actions
+  "The click sends `text`; with `{checked}` in it the browser first puts
+  in the values ticked in the block (`[:pchat/checked text]`)."
   [{:keys [id]} text]
-  {:click [[:data/command {:command/kind :chat/send
-                           :command/data {:id id
-                                          :text (str text)}}]]})
+  (let [text (str text)]
+    {:click [[:data/command {:command/kind :chat/send
+                             :command/data {:id id
+                                            :text (if (str/includes? text checked)
+                                                    [:pchat/checked text]
+                                                    text)}}]]}))
 
 (defn- open-actions
   [{:keys [id]} path]
@@ -93,6 +112,9 @@
               (= :style k) (if-let [v (style v)] (assoc acc :style v) acc)
               (= :send k) (assoc acc :on (send-actions opts v))
               (= :open k) (assoc acc :on (open-actions opts v))
+              (= :type k) (if (and (= :input tag) (contains? input-types v))
+                            (assoc acc k v)
+                            acc)
               (or (string? v) (number? v) (boolean? v)) (assoc acc k v)
               :else acc))
           {}
@@ -108,7 +130,9 @@
           base (base-tag tag)
           tag (if (contains? tags base) tag :span)
           [m body] (if (map? (first body)) [(first body) (rest body)] [{} body])]
-      (into [tag (attrs opts base m)] (map #(sanitize % opts) body)))
+      ;; an input that is no choice (a text field, a file, a button) is left out
+      (when-not (and (= :input base) (not (contains? input-types (:type m))))
+        (into [tag (attrs opts base m)] (map #(sanitize % opts) body))))
 
     (sequential? hiccup) (map #(sanitize % opts) hiccup)
     (or (string? hiccup) (number? hiccup) (nil? hiccup)) hiccup
