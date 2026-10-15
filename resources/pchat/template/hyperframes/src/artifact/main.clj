@@ -15,7 +15,13 @@
   A project that wants other controls defines `artifact.controls` in
   src/artifact/controls.clj: `controls`, a function of the declarations
   and the values to hiccup, and `register`, more entries of rframes (its
-  own commands)."
+  own commands).
+
+  Several compositions in one project: without composition/index.html,
+  every folder composition/<name>/ with an index.html of its own is a
+  composition, and the page shows them side by side, one player each,
+  without controls (a series of shorts to look at together). Each one
+  renders on its own: `hyperframes render` in its folder."
   (:require [babashka.fs :as fs]
             [babashka.nrepl.server :as nrepl]
             [cheshire.core :as json]
@@ -164,6 +170,25 @@
 
 ;;; The composition
 
+(defn compositions
+  "The folders of composition/ that are compositions of their own, when
+  there is no composition/index.html: [\"short-1\" \"short-2\"], else []."
+  []
+  (if (fs/exists? (fs/file composition-dir "index.html"))
+    []
+    (->> (fs/list-dir composition-dir)
+         (filter #(and (fs/directory? %)
+                       (not (str/starts-with? (str (fs/file-name %)) "."))
+                       (fs/exists? (fs/file % "index.html"))))
+         (map #(str (fs/file-name %)))
+         (sort)
+         (vec))))
+
+(defn title
+  "The <title> of a composition's page, else nil."
+  [html]
+  (some-> (re-find #"(?is)<title[^>]*>(.*?)</title>" (str html)) second str/trim not-empty))
+
 (defn rev
   "The newest change of the composition and of the values, so that the
   page knows to load it again."
@@ -185,16 +210,20 @@
 (defn with-runtime
   "The composition page for the player: the values, the registry of the
   timelines defined before the composition's script, the runtime in the
-  head. A page that has the runtime already gets the values alone."
-  [html values]
-  (let [runtime? (str/includes? html "hyperframes-runtime.js")
-        tags (str (variables-script values)
-                  (when-not runtime?
-                    (str "<script>window.__timelines = window.__timelines || {};</script>"
-                         "<script src=\"../vendor/hyperframes-runtime.js\"></script>")))]
-    (if (re-find #"(?i)<head[^>]*>" html)
-      (str/replace-first html #"(?i)<head[^>]*>" #(str % tags))
-      (str tags html))))
+  head. A page that has the runtime already gets the values alone.
+  `subpath` is where the page lies in composition/, for the way back to
+  vendor/."
+  ([html values] (with-runtime html values "index.html"))
+  ([html values subpath]
+   (let [runtime? (str/includes? html "hyperframes-runtime.js")
+         up (apply str (repeat (inc (count (re-seq #"/" (str subpath)))) "../"))
+         tags (str (variables-script values)
+                   (when-not runtime?
+                     (str "<script>window.__timelines = window.__timelines || {};</script>"
+                          "<script src=\"" up "vendor/hyperframes-runtime.js\"></script>")))]
+     (if (re-find #"(?i)<head[^>]*>" html)
+       (str/replace-first html #"(?i)<head[^>]*>" #(str % tags))
+       (str tags html)))))
 
 (defn- html-response
   [body]
@@ -213,8 +242,8 @@
     (assoc w :ring/response
            (cond
              (nil? file) http/not-found
-             (= "index.html" subpath) (html-response (with-runtime (slurp file) (:variables @db)))
-             (str/ends-with? (str file) ".html") (html-response (with-runtime (slurp file) {}))
+             (= "index.html" subpath) (html-response (with-runtime (slurp file) (:variables @db) subpath))
+             (str/ends-with? (str file) ".html") (html-response (with-runtime (slurp file) {} subpath))
              :else (http/file-response (:ring/request w) file)))))
 
 (defn- stills-handler
@@ -297,8 +326,39 @@
           (println "artifact.controls:" (ex-message e)))
         nil))))
 
+(defn- player
+  "A HyperFrames player of the composition at `src`, sized for `html`."
+  [src html height-vh]
+  (let [[width height] (size html)]
+    [:hyperframes-player {:replicant/key src
+                          :src src
+                          :controls true
+                          ;; a width of its own, not a share of the figure, which takes the
+                          ;; width of what it holds
+                          :style {:aspect-ratio (str width " / " height)
+                                  :width (str "calc(" height-vh "vh * " width " / " height ")")
+                                  :max-width "100%"}}]))
+
+(defn series-view
+  "Several compositions side by side, one player each."
+  [names]
+  [:div.series
+   (for [name names
+         :let [html (slurp (fs/file composition-dir name "index.html"))]]
+     [:figure {:replicant/key name}
+      (player (str "composition/" name "/index.html") html 62)
+      [:figcaption (or (title html) name)]])])
+
+(declare single-view)
+
 (defn page-view
   [_w]
+  (if-let [names (not-empty (compositions))]
+    (series-view names)
+    (single-view)))
+
+(defn single-view
+  []
   (let [html (index-html)
         declarations (declarations html)
         values (:variables @db)
@@ -332,6 +392,9 @@
        ".control input[type=checkbox] { justify-self: start; width: 18px; height: 18px; }"
        ".reset { width: 28px; height: 28px; border: none; background: none; color: #888; cursor: pointer; font-size: 16px; }"
        ".hint { margin: 4px 0 0; color: #888; font-size: 13px; }"
+       ".series { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }"
+       ".series figure { margin: 0; display: flex; flex-direction: column; gap: 6px; }"
+       ".series figcaption { font-size: 13px; color: #555; max-width: 240px; }"
        "@media (prefers-color-scheme: dark) {"
        " body { color: #eee; background: #18181b; } .control label { color: #bbb; }"
        " .control input[type=text], .control input[type=number], .control select { background: #27272a; color: #eee; border-color: #3f3f46; } }"
@@ -340,13 +403,15 @@
        "<script>(function () {"
        " var rev = null;"
        " setInterval(function () {"
-       "  var player = document.getElementById('player'); if (!player) return;"
+       "  var players = document.querySelectorAll('hyperframes-player'); if (!players.length) return;"
        "  fetch('rev').then(function (r) { return r.text(); }).then(function (now) {"
        "   if (rev === null) { rev = now; return; }"
        "   if (now !== rev) {"
-       "    rev = now; var t = player.currentTime || 0;"
-       "    player.addEventListener('ready', function () { player.seek(t); }, {once: true});"
-       "    player.setAttribute('src', 'composition/index.html?rev=' + now); }"
+       "    rev = now;"
+       "    players.forEach(function (player) {"
+       "     var t = player.currentTime || 0, src = player.getAttribute('src').replace(/\\?rev=.*$/, '');"
+       "     player.addEventListener('ready', function () { player.seek(t); }, {once: true});"
+       "     player.setAttribute('src', src + '?rev=' + now); }); }"
        "  }).catch(function () {}); }, 1000);"
        "})();</script>"
        ;; pchat serves the browser runtime of rframes; this page lives

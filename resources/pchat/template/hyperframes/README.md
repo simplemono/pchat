@@ -26,6 +26,12 @@ loads it again whenever a file of it changes.
   Images go into `composition/` as well.
 - The video: `bin/render <name>` from the workspace, `artifacts/<name>.mp4`
   by `hyperframes render`, with the values of `variables.json`.
+- Several compositions, side by side: without `composition/index.html`,
+  every folder `composition/<name>/` with its own `index.html` (a whole
+  HyperFrames project: its `compositions/`, `assets/`) is shown in a
+  player of its own, titled by its `<title>`, without controls. Each
+  renders on its own, `hyperframes render` in its folder; `bin/render`
+  takes only the single composition.
 - `hyperframes lint` in `composition/` finds mistakes in seconds;
   `hyperframes check` plays the whole composition and takes minutes, so
   leave it to the render.

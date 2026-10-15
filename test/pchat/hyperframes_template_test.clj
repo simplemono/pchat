@@ -58,3 +58,14 @@
     (let [page ((f "with-runtime") "<html><head><script src=\"x/hyperframes-runtime.js\"></script></head></html>" {})]
       (is (= 1 (count (re-seq #"hyperframes-runtime\.js" page))))
       (is (str/includes? page "window.__hfVariables = {};")))))
+
+(deftest series-test
+  (testing "the way back to vendor/ from a composition in a folder"
+    (let [page ((f "with-runtime") "<html><head></head></html>" {} "short-1/index.html")]
+      (is (str/includes? page "src=\"../../vendor/hyperframes-runtime.js\""))))
+  (testing "the root composition keeps its path"
+    (is (str/includes? ((f "with-runtime") "<html><head></head></html>" {}) "src=\"../vendor/hyperframes-runtime.js\"")))
+  (testing "a composition's title"
+    (is (= "Kuchen weg" ((f "title") "<html><head><title> Kuchen weg </title></head></html>")))
+    (is (nil? ((f "title") "<html></html>")))))
+
