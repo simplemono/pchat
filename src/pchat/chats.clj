@@ -5,7 +5,8 @@
 
       artifacts/   what the agent makes, shown beside the chat
       uploads/     the pictures and clips the person attached
-      tmp/         the temporary files of the agent and its tools (TMPDIR)
+      tmp/         the temporary files of the agent and its tools, TMPDIR
+                   by the short link /tmp/pchat/<id> (`tmp-path`)
       .session/    pi's session file, the history of the chat
       .chat.edn    the name the person gave the chat, and its task
       bin .pchat .pi   links to the shared scripts, templates and lib,
@@ -56,6 +57,36 @@
 (defn tmp-dir
   [chats-dir id]
   (io/file chats-dir (str id) "tmp"))
+
+(def short-tmp-root
+  "Where a chat's tmp/ is linked from by a short path. A program that
+  puts a socket into TMPDIR fails when the socket's path is longer than
+  107 bytes: Chrome's `<TMPDIR>/com.google.Chrome.XXXXXX/SingletonSocket`
+  under chats/<id>/tmp/ of a sprite's workspace is 116, so no render and
+  no tool that starts a Chrome would run."
+  "/tmp/pchat")
+
+(defn tmp-link
+  [id]
+  (fs/path short-tmp-root (str id)))
+
+(defn tmp-path
+  "TMPDIR for the chat's processes: /tmp/pchat/<id>, a link to its tmp/
+  folder, made or mended now; the folder itself when no link can be
+  made there."
+  [chats-dir id]
+  (let [target (fs/absolutize (tmp-dir chats-dir id))
+        link (tmp-link id)]
+    (try
+      (fs/create-dirs target)
+      (fs/create-dirs short-tmp-root)
+      (when-not (and (fs/sym-link? link)
+                     (= (str (fs/read-link link)) (str target)))
+        (fs/delete-if-exists link)
+        (fs/create-sym-link link target))
+      (str link)
+      (catch Exception _
+        (str target)))))
 
 (defn session-dir
   [chats-dir id]
@@ -128,7 +159,9 @@
   [chats-dir id]
   (let [chat (dir chats-dir id)]
     (when (and (valid-id? id) (.isDirectory chat))
-      (fs/delete-tree chat))))
+      (fs/delete-tree chat)
+      (when (fs/sym-link? (tmp-link id))
+        (fs/delete-if-exists (tmp-link id))))))
 
 (comment
   (new-id)
