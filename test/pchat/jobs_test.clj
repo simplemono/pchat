@@ -43,7 +43,7 @@
       (let [[[_ one] [_ three]] @told]
         (is (str/includes? one "Background job 1 (bin/background) has ended with exit 0 after 10 min: node render.mjs 01"))
         (is (str/includes? one "work/out/01.mp4: 14 MB."))
-        (is (str/includes? three "without an exit"))
+        (is (str/includes? three "without an exit: it was stopped, or the machine restarted after 60 s"))
         (is (str/includes? three "It printed nothing.")))
       (jobs/report-ended! chats-dir [id] (fn [id text] (swap! told conj [id text])) now)
       (is (= 2 (count @told)) "not twice"))

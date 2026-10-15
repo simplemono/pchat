@@ -67,13 +67,14 @@
 (defn report
   "What the agent is told about an ended job."
   [{:keys [n dir command started exit]} now]
-  (let [minutes (when started (max 1 (Math/round (/ (- now started) 60000.0))))
+  (let [seconds (when started (Math/round (/ (- now started) 1000.0)))
         output (tail dir 30)]
     (str "Background job " n " (bin/background) has ended"
          (if (some? exit)
            (str " with exit " exit)
            " without an exit: it was stopped, or the machine restarted")
-         (when minutes (str " after " minutes " min"))
+         (when seconds
+           (str " after " (if (< seconds 60) (str seconds " s") (str (Math/round (/ seconds 60.0)) " min"))))
          ": " command "\n"
          (if (str/blank? output)
            "It printed nothing."
