@@ -1251,8 +1251,12 @@ html.theme-dark {
   font-size: 14px;
 }
 
+/* Each section starts with a hairline and its heading; the actions
+   row at the top stands alone. */
 .pchat .rchat .job h2 {
-  margin: 20px 0 6px;
+  margin: 28px 0 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--rchat-line);
   font-size: 13px;
   font-weight: 600;
   text-transform: uppercase;
@@ -1264,7 +1268,8 @@ html.theme-dark {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 12px;
+  gap: 8px 12px;
+  margin: 6px 0;
 }
 
 .pchat .rchat .job .actions .state {
@@ -1308,8 +1313,9 @@ html.theme-dark {
 }
 
 .pchat .rchat .job .note {
-  margin: 4px 0;
+  margin: 8px 0;
   font-size: 13px;
+  line-height: 1.45;
   color: var(--rchat-muted);
 }
 
@@ -1320,7 +1326,7 @@ html.theme-dark {
 }
 
 .pchat .rchat .job .schedule-now {
-  margin: 4px 0;
+  margin: 8px 0 4px;
   font-weight: 600;
 }
 
@@ -1335,7 +1341,7 @@ html.theme-dark {
 .pchat .rchat .job select {
   display: block;
   width: 100%;
-  margin: 6px 0;
+  margin: 12px 0 8px;
   padding: 6px 8px;
   border: 1px solid var(--rchat-line);
   border-radius: 6px;
@@ -1359,12 +1365,13 @@ html.theme-dark {
 .pchat .rchat .job .picks {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 8px;
+  gap: 4px 10px;
+  margin: 0 0 16px;
   font-size: 13px;
 }
 
 .pchat .rchat .job .proposal {
-  margin: 8px 0;
+  margin: 12px 0 16px;
   padding: 8px 12px;
   border: 1px solid var(--rchat-line);
   border-radius: 8px;
@@ -1379,7 +1386,8 @@ html.theme-dark {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  margin: 14px 0 8px;
 }
 
 .pchat .rchat .job .zone select {
@@ -1391,8 +1399,13 @@ html.theme-dark {
 }
 
 .pchat .rchat .job table.runs {
+  margin-top: 8px;
   border-collapse: collapse;
   font-size: 13px;
+}
+
+.pchat .rchat .job table.runs td {
+  padding: 5px 14px 5px 0;
 }
 
 .pchat .rchat .job table.runs td {
