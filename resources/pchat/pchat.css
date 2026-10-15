@@ -156,11 +156,15 @@ html.theme-dark {
 }
 
 .pchat .sidebar .chats li {
+  display: flex;
+  align-items: center;
   border-radius: 8px;
   cursor: pointer;
 }
 
 .pchat .sidebar .chats li .row {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -186,6 +190,114 @@ html.theme-dark {
 .pchat .sidebar .chats li.current {
   background: var(--pchat-sidebar-current);
   color: var(--pchat-sidebar-current-text);
+}
+
+/* The three dots of a row and their menu, see pchat.view/chat-actions.
+   The dots show on hover, on the current row, and always on a touch
+   screen. */
+.pchat .sidebar .chats li .actions {
+  position: relative;
+  flex: none;
+  margin-right: 4px;
+}
+
+.pchat .sidebar .chats li .actions summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 2px 7px;
+  border-radius: 6px;
+  color: var(--pchat-sidebar-link);
+  font-size: 16px;
+  line-height: 1.3;
+  opacity: 0;
+}
+
+.pchat .sidebar .chats li .actions summary::-webkit-details-marker {
+  display: none;
+}
+
+.pchat .sidebar .chats li:hover .actions summary,
+.pchat .sidebar .chats li.current .actions summary,
+.pchat .sidebar .chats li .actions[open] summary,
+.pchat .sidebar .chats li .actions summary:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .pchat .sidebar .chats li .actions summary {
+    opacity: 1;
+  }
+}
+
+.pchat .sidebar .chats li .actions summary:hover {
+  background: var(--pchat-sidebar-item);
+  color: var(--pchat-sidebar-text);
+}
+
+.pchat .sidebar .chats li .actions .items {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 2px);
+  z-index: 20;
+  min-width: 150px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--pchat-sidebar-item);
+  border: 1px solid var(--pchat-sidebar-item-line);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px var(--pchat-shadow);
+}
+
+.pchat .sidebar .chats li .actions .item {
+  text-align: left;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  color: var(--pchat-sidebar-text);
+  cursor: pointer;
+}
+
+.pchat .sidebar .chats li .actions .item:hover {
+  background: var(--pchat-sidebar-hover);
+}
+
+.pchat .sidebar .chats li .actions .item.danger {
+  color: var(--pchat-danger);
+}
+
+.pchat .sidebar .chats li .actions .item.hook.on::after {
+  content: " \2713";
+}
+
+/* The row while a delete is armed, see pchat.view/delete-confirm. */
+.pchat .sidebar .chats li .confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.pchat .sidebar .chats li .confirm .choices {
+  display: flex;
+  gap: 12px;
+}
+
+.pchat .sidebar .chats li .confirm button.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--pchat-sidebar-text);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.pchat .sidebar .chats li .confirm button.link.danger {
+  color: var(--pchat-danger);
 }
 
 .pchat .sidebar .chats li.working .dot {
@@ -229,18 +341,6 @@ html.theme-dark {
 
 .pchat .rchat .bar button.link:hover {
   color: var(--rchat-text);
-  text-decoration: underline;
-}
-
-.pchat .rchat .bar button.link.danger {
-  color: var(--pchat-danger);
-}
-
-.pchat .rchat .bar button.link.hook.on {
-  color: var(--rchat-text);
-}
-
-.pchat .rchat .bar button.link.hook.open {
   text-decoration: underline;
 }
 

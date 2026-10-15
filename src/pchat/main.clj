@@ -706,10 +706,15 @@
     (command/accepted w)))
 
 (defn- hook-toggle-command
-  "The webhook panel of the chat, shown or hidden."
+  "The webhook panel of the chat, shown or hidden. With a `:tab` (the
+  menu of a sidebar row names it), that tab shows the chat as well,
+  so that the panel is in view."
   [w]
-  (let [{:keys [id]} (command/command-data w)]
-    (swap! db (fn [db] (if (= id (:hook-open db)) (dissoc db :hook-open) (assoc db :hook-open id))))
+  (let [{:keys [id tab]} (command/command-data w)
+        tab (str tab)]
+    (swap! db (fn [db]
+                (cond-> (if (= id (:hook-open db)) (dissoc db :hook-open) (assoc db :hook-open id))
+                  (and (seq tab) (get-in db [:chats id])) (assoc-in [:tabs tab] id))))
     (command/accepted w)))
 
 (defn- hook-create-command

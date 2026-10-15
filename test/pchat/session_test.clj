@@ -51,8 +51,19 @@
         lis (filter #(and (vector? %) (= :li (first %))) (tree-seq coll? seq sidebar))]
     (is (= ["b" (:id a)] (map #(get-in % [1 :replicant/key]) lis)))
     (is (= "current working" (get-in (first lis) [1 :class])))
-    (is (= "/chat/b" (get-in (first lis) [2 1 :href])) "a row is a link to the chat's page")
+    (let [nodes (fn [li tag] (filter #(and (vector? %) (= tag (first %))) (tree-seq coll? seq li)))
+          commands (fn [li] (->> (nodes li :data/command) (map (comp :command/kind second))))]
+      (is (= "/chat/b" (get-in (first (nodes (first lis) :a.row)) [1 :href])) "a row is a link to the chat's page")
+      (is (= [:hook/toggle :chat/delete] (commands (first lis))) "the actions of the chat are in the row's menu")
+      (is (= "b" (-> (nodes (first lis) :details.actions) first (nth 2) (nth 1) (get-in [1 :on :click 0 1 :command/data :id])))
+          "the menu acts on its own chat"))
     (is (some #{"New chat"} (filter string? (tree-seq coll? seq sidebar)))))
+  (testing "a row whose delete is armed asks instead of linking"
+    (let [b {:id "b" :items [] :status :idle :updated 3 :cost 0.0}
+          sidebar (i18n/translate (view/sidebar {:chats {"b" b} :deleting "b"} {:id "b"}) :en)
+          strings (filter string? (tree-seq coll? seq sidebar))]
+      (is (some #{"Delete this chat for good?"} strings))
+      (is (not-any? #(and (vector? %) (= :a.row (first %))) (tree-seq coll? seq sidebar)))))
   (testing "the running version stands next to the name once the updater noted it"
     (let [strings (fn [db] (filter string? (tree-seq coll? seq (view/sidebar db))))]
       (is (some #{"0.1.7"} (strings {:chats {} :update {:current "0.1.7"}})))

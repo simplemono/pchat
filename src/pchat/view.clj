@@ -236,27 +236,39 @@
       (some #(when (= :user (:kind %)) (first (str/split-lines (:text %)))) items)
       [:i18n :chat/untitled]))
 
-(defn- delete-controls
-  "Delete asks once: the first click arms it, the second deletes."
-  [{:keys [id]} deleting]
-  (if (= id deleting)
-    [:span.confirm
-     [:i18n :chat/delete-sure]
-     [:button.link.danger {:on {:click [[:data/command {:command/kind :chat/delete
-                                                        :command/data {:id id}}]]}}
-      [:i18n :chat/delete-yes]]
-     [:button.link {:on {:click [[:data/command {:command/kind :chat/keep}]]}}
-      [:i18n :chat/keep]]]
-    [:button.link.delete {:on {:click [[:data/command {:command/kind :chat/delete
+(defn- delete-confirm
+  "The row of a chat whose deletion is armed (see `:chat/delete`): the
+  question, then delete for good or keep."
+  [id]
+  [:div.confirm
+   [:span [:i18n :chat/delete-sure]]
+   [:span.choices
+    [:button.link.danger {:on {:click [[:data/command {:command/kind :chat/delete
                                                        :command/data {:id id}}]]}}
-     [:i18n :chat/delete]]))
+     [:i18n :chat/delete-yes]]
+    [:button.link {:on {:click [[:data/command {:command/kind :chat/keep}]]}}
+     [:i18n :chat/keep]]]])
 
-(defn- hook-button
-  [{:keys [id hook]} hook-open]
-  [:button.link.hook {:class (str (when hook "on") (when (= id hook-open) " open"))
-                      :on {:click [[:data/command {:command/kind :hook/toggle
-                                                   :command/data {:id id}}]]}}
-   [:i18n :hook/button]])
+(defn- chat-actions
+  "The menu behind the three dots of a sidebar row: what one can do with
+  that chat, like the menu of a chat on claude.ai. A <details>, so the
+  browser opens and closes it; the runtime (`pchat.client`) closes it
+  on a click elsewhere. The webhook names the tab, so that the chat
+  opens here with its panel; a delete arms the question in the row."
+  [{:keys [id hook]}]
+  [:details.actions
+   [:summary {:aria-label [:i18n :chat/actions]
+              :title [:i18n :chat/actions]}
+    "\u22ee"]
+   [:div.items
+    [:button.item.hook {:class (when hook "on")
+                        :on {:click [[:data/command {:command/kind :hook/toggle
+                                                     :command/data {:id id
+                                                                    :tab :pchat/tabid}}]]}}
+     [:i18n :hook/button]]
+    [:button.item.danger {:on {:click [[:data/command {:command/kind :chat/delete
+                                                       :command/data {:id id}}]]}}
+     [:i18n :chat/delete]]]])
 
 (defn hook-panel
   "Under the header when opened: the address of the webhook to paste
@@ -465,8 +477,9 @@
 
 (defn header
   "The name of the chat is a field: a change renames it. `:task` is the
-  title of the chat's task, when it has one."
-  [{:keys [id status cost name] :as chat} {:keys [deleting hook-open task]}]
+  title of the chat's task, when it has one. The actions on the chat
+  are in its sidebar row (`chat-actions`)."
+  [{:keys [id status cost name] :as chat} {:keys [task]}]
   [:header.bar
    ;; On a phone the sidebar is a drawer; this opens it (see the
    ;; checkbox in `page`).
@@ -486,9 +499,7 @@
       :working [:i18n :chat/working]
       [:i18n :chat/ready])]
    (when (pos? cost)
-     [:span.spend (format "$%.2f" cost)])
-   (hook-button chat hook-open)
-   (delete-controls chat deleting)])
+     [:span.spend (format "$%.2f" cost)])])
 
 (defn composer
   "`:placeholder` in `opts` is the task's, the general one without. The
@@ -535,7 +546,7 @@
   opens here."
   ([db]
    (sidebar db {}))
-  ([{:keys [chats settings-open update]} {:keys [id locale]}]
+  ([{:keys [chats deleting settings-open update]} {:keys [id locale]}]
   (let [shown id
         chats (sort-by #(or (:updated %) 0) > (vals chats))]
     [:aside.sidebar
@@ -557,11 +568,15 @@
         [:li {:replicant/key id
               :class (str (when (= id shown) "current")
                           (when (= :working status) " working"))}
-         [:a.row {:href (chats/url id)
-                  :data-chat id}
-          [:span.name (chat-name chat)]
-          (when (= :working status)
-            [:span.dot])]])]
+         (if (= id deleting)
+           (delete-confirm id)
+           (list
+            [:a.row {:href (chats/url id)
+                     :data-chat id}
+             [:span.name (chat-name chat)]
+             (when (= :working status)
+               [:span.dot])]
+            (chat-actions chat)))])]
      ;; The bottom of the sidebar: the settings, in place of the chat
      ;; when opened, and the languages.
      [:div.bottom
@@ -671,9 +686,7 @@
         (migrate-banner migration)
         (when note
           [:div.banner.note note])
-        (header chat {:deleting deleting
-                      :hook-open hook-open
-                      :task (some-> skill (skills/text :title locale))})
+        (header chat {:task (some-> skill (skills/text :title locale))})
         (when (= id hook-open)
           (hook-panel chat opts))
         (when card?
