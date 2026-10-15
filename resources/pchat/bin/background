@@ -1,0 +1,69 @@
+#!/usr/bin/env bb
+;; bin/background <command> [args]   a task that outlasts your turn: several renders, a long
+;; download. It runs on by itself, detached from you; pchat counts it as work (the machine stays
+;; awake while it runs) and, when it has ended, writes to you in this chat: its exit, how long it
+;; took and the end of its output. One argument is a shell command line, several are a program
+;; and its arguments:
+;;
+;;   bin/background 'for k in 01 02; do node render.mjs $k; done'
+;;   bin/background node tools/short.mjs render work/01 work/out/01.mp4
+;;
+;; bin/background --list   the tasks of this chat, running or ended
+;;
+;; A task lives in .background/<n>/ of the chat's folder: command, pid, started, log (its output) and,
+;; once it has ended, exit.
+(require '[babashka.fs :as fs]
+         '[babashka.process :as process]
+         '[clojure.string :as str])
+
+(def tasks (fs/file "." ".background"))
+
+(defn alive?
+  [pid]
+  (boolean (some-> (parse-long (str/trim (str pid))) (java.lang.ProcessHandle/of) (.orElse nil) (.isAlive))))
+
+(defn read-file
+  [dir file]
+  (let [f (fs/file dir file)]
+    (when (fs/exists? f) (str/trim (slurp f)))))
+
+(defn listing
+  []
+  (let [dirs (sort-by #(parse-long (fs/file-name %)) (filter fs/directory? (if (fs/exists? tasks) (fs/list-dir tasks) [])))]
+    (if (empty? dirs)
+      (println "No background tasks in this chat.")
+      (doseq [dir dirs]
+        (let [exit (read-file dir "exit")]
+          (println (str (fs/file-name dir) "  "
+                        (cond exit (str "ended, exit " exit)
+                              (alive? (read-file dir "pid")) "running"
+                              :else "ended without an exit")
+                        "  " (read-file dir "command") "   (output: .background/" (fs/file-name dir) "/log)")))))))
+
+(let [args *command-line-args*]
+  (cond
+    (empty? args)
+    (do (println "bin/background <command> [args]: runs a task on by itself; pchat writes to you when it has ended. bin/background --list shows the tasks.")
+        (System/exit 1))
+
+    (= ["--list"] args)
+    (listing)
+
+    :else
+    (let [n (inc (reduce max 0 (keep #(parse-long (fs/file-name %)) (if (fs/exists? tasks) (fs/list-dir tasks) []))))
+          dir (fs/file tasks (str n))
+          command (if (= 1 (count args)) ["sh" "-c" (first args)] args)
+          ;; the task's own shell: its output into log, its exit into exit (written whole, then
+          ;; renamed, so that pchat never reads half of it)
+          script (str "\"$@\" > " (fs/file dir "log") " 2>&1; echo $? > " (fs/file dir "exit.part")
+                      " && mv " (fs/file dir "exit.part") " " (fs/file dir "exit"))]
+      (fs/create-dirs dir)
+      (spit (fs/file dir "command") (str/join " " args))
+      (spit (fs/file dir "started") (str (System/currentTimeMillis)))
+      ;; setsid: a session of its own, so that it outlives the agent's command and nothing of it
+      ;; holds the agent's output open
+      (let [p (process/process (into ["setsid" "sh" "-c" script "task"] command)
+                               {:in (fs/file "/dev/null") :out (fs/file "/dev/null") :err (fs/file "/dev/null")})]
+        (spit (fs/file dir "pid") (str (.pid (:proc p)))))
+      (println (str "Background task " n " started: " (str/join " " args) ". Its output goes to .background/" n "/log; "
+                    "pchat writes to you here when it has ended. Do not wait for it: tell the person what runs and end your turn.")))))

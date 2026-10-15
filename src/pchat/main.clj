@@ -4,6 +4,10 @@
       PORT             default 8080
       PCHAT_WORKSPACE  the folder of the chats, default ./workspace
       PCHAT_PROVIDER   default openrouter (OPENROUTER_API_KEY in the environment)
+
+  The variables come from the environment, or from .env and .env.local
+  in the working directory (see `pchat.env`): a hand start next to the
+  file needs no export.
       PCHAT_MODEL      default openai/gpt-6.1-sol
       PCHAT_TOKEN      a secret: the page is behind the link that sets the cookie
       PCHAT_AGENTITOS  an agentitos checkout: its skills are the tasks a chat can be for
@@ -19,15 +23,18 @@
   file when it is first shown. Which chat a browser tab shows is the
   tab's: its URL, `/chat/<id>`, until a click in the sidebar names
   another (`:tabs`)."
-  (:require [babashka.nrepl.server :as nrepl-server]
+  (:require [pchat.env :as env]
+            [babashka.nrepl.server :as nrepl-server]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [org.httpkit.server :as server]
             [pchat.artifacts :as artifacts]
+            [pchat.awake :as awake]
             [pchat.chat :as chat]
             [pchat.chats :as chats]
             [pchat.hooks :as hooks]
             [pchat.i18n :as i18n]
+            [pchat.background :as background]
             [pchat.looks :as looks]
             [pchat.mcp :as mcp]
             [pchat.migrate :as migrate]
@@ -51,23 +58,23 @@
 (def workspace
   ;; Absolute: pi and the artifact projects run inside it and resolve
   ;; relative paths against their own directory.
-  (.getAbsoluteFile (io/file (or (System/getenv "PCHAT_WORKSPACE") "./workspace"))))
+  (.getAbsoluteFile (io/file (or (env/get "PCHAT_WORKSPACE") "./workspace"))))
 
 (def chats-dir
   (io/file workspace "chats"))
 
 (def bb
-  (or (System/getenv "BB") "bb"))
+  (or (env/get "BB") "bb"))
 
 (def provider
-  (or (System/getenv "PCHAT_PROVIDER") "openrouter"))
+  (or (env/get "PCHAT_PROVIDER") "openrouter"))
 
 (def model
-  (or (System/getenv "PCHAT_MODEL") "openai/gpt-6.1-sol"))
+  (or (env/get "PCHAT_MODEL") "openai/gpt-6.1-sol"))
 
 (def key-missing?
   (and (= "openrouter" provider)
-       (str/blank? (System/getenv "OPENROUTER_API_KEY"))))
+       (str/blank? (env/get "OPENROUTER_API_KEY"))))
 
 (defonce db
   (atom {:chats {}
@@ -123,10 +130,12 @@
                   :on-finish (fn [id _name] (artifacts/refollow! artifacts id))}))
 
 (defn- idle?
-  "No chat works and no video renders: the moment the process may end."
+  "No chat works, no video renders and no task of `bin/background` runs:
+  the moment the process may end."
   []
   (and (every? #(= :idle (:status %)) (vals (:chats @db)))
-       (not (render/any-running? renders))))
+       (not (render/any-running? renders))
+       (not (background/running? chats-dir (keys (:chats @db))))))
 
 (def updater
   (update/handle {:db db
@@ -182,7 +191,8 @@
    "bin/voice"
    "bin/ask"
    "bin/mcp"
-   "bin/migrate-chats"])
+   "bin/migrate-chats"
+   "bin/background"])
 
 (def lib-files
   "Namespaces of pchat the scripts load from .pchat/lib: `bin/mcp` edits
@@ -417,8 +427,8 @@
   on the PATH, the chat's own folder for temporary files."
   [id]
   (assoc (tools/env)
-         "PATH" (str (.getPath (io/file workspace "bin")) ":" (System/getenv "PATH"))
-         "TMPDIR" (str (chats/tmp-dir chats-dir id))))
+         "PATH" (str (.getPath (io/file workspace "bin")) ":" (env/get "PATH"))
+         "TMPDIR" (chats/tmp-path chats-dir id)))
 
 (defn- ensure-pi!
   [id]
@@ -532,6 +542,20 @@
       :else
       (do (send! id message images)
           (command/accepted w)))))
+
+(defn- watch-background!
+  "Every two seconds: a task of `bin/background` that has ended is told to
+  its chat's agent, which goes on with what it started it for."
+  []
+  (future
+    (loop []
+      (Thread/sleep 2000)
+      (try
+        (background/report-ended! chats-dir (keys (:chats @db)) (fn [id text] (send! id text [])) (now))
+        (catch Exception e
+          (binding [*out* *err*]
+            (println "[background]" (str e)))))
+      (recur))))
 
 (defn- abort-command
   [w]
@@ -706,10 +730,15 @@
     (command/accepted w)))
 
 (defn- hook-toggle-command
-  "The webhook panel of the chat, shown or hidden."
+  "The webhook panel of the chat, shown or hidden. With a `:tab` (the
+  menu of a sidebar row names it), that tab shows the chat as well,
+  so that the panel is in view."
   [w]
-  (let [{:keys [id]} (command/command-data w)]
-    (swap! db (fn [db] (if (= id (:hook-open db)) (dissoc db :hook-open) (assoc db :hook-open id))))
+  (let [{:keys [id tab]} (command/command-data w)
+        tab (str tab)]
+    (swap! db (fn [db]
+                (cond-> (if (= id (:hook-open db)) (dissoc db :hook-open) (assoc db :hook-open id))
+                  (and (seq tab) (get-in db [:chats id])) (assoc-in [:tabs tab] id))))
     (command/accepted w)))
 
 (defn- hook-create-command
@@ -911,6 +940,9 @@
 
 (def head
   (str "<title>pchat</title>"
+       ;; Read by the client: where this page's commands go (see
+       ;; `pchat.client/init!`).
+       "<meta name=\"pchat-command\" content=\"/command\">"
        "<link rel=\"icon\" href=\"data:,\">"
        ;; Relative links in an answer, `artifacts/card.html`, resolve
        ;; against the chat's page: the `:ui/url` alias of the page
@@ -1119,9 +1151,9 @@
   `.nrepl-port` in the workspace for editors; `PCHAT_NREPL=off` leaves
   it out. Answers the port, nil when off."
   [workspace]
-  (when-not (= "off" (System/getenv "PCHAT_NREPL"))
+  (when-not (= "off" (env/get "PCHAT_NREPL"))
     (let [server (nrepl-server/start-server! {:host "127.0.0.1"
-                                              :port (parse-long (or (System/getenv "PCHAT_NREPL_PORT") "0"))
+                                              :port (parse-long (or (env/get "PCHAT_NREPL_PORT") "0"))
                                               :quiet true})
           port (.getLocalPort ^java.net.ServerSocket (:socket server))]
       (spit (io/file workspace ".nrepl-port") (str port))
@@ -1145,15 +1177,18 @@
   (poll-artifacts!)
   (sync-projects!)
   (reap-idle-pis!)
+  (watch-background!)
   (watch-connections!)
   (setup/watch! setup)
   (update/watch! updater)
+  ;; On a Sprite: no pause while a chat works or a video renders.
+  (awake/watch! #(not (idle?)))
   (.addShutdownHook (Runtime/getRuntime) (Thread. #(do (projects/stop-all! projects)
                                                        (render/stop-all! renders)
                                                        (hooks/stop-all! hooks))))
   (sse/watch! db)
-  (let [port (parse-long (or (System/getenv "PORT") "8080"))
-        token (System/getenv "PCHAT_TOKEN")
+  (let [port (parse-long (or (env/get "PORT") "8080"))
+        token (env/get "PCHAT_TOKEN")
         nrepl-port (start-nrepl! workspace)]
     ;; http-kit holds a request body in memory: the browser sends a clip
     ;; in pieces of 8 MB (`pchat.uploads`), this leaves room for a clip
@@ -1165,7 +1200,7 @@
     ;; a hand start prints the link to open.
     (println (str "pchat on "
                   (cond
-                    (and token (System/getenv "PCHAT_JAR")) (str "http://localhost:" port " (the token is in the environment)")
+                    (and token (env/get "PCHAT_JAR")) (str "http://localhost:" port " (the token is in the environment)")
                     token (auth/link (str "http://localhost:" port) token)
                     :else (str "http://localhost:" port))
                   ", " (count (:chats @db)) " chats, the model is " provider "/" model

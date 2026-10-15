@@ -27,7 +27,8 @@
                :error \"...\"}
 
   `:ready` is the new jar checked and waiting for the work to end."
-  (:require [babashka.fs :as fs]
+  (:require [pchat.env :as env]
+            [babashka.fs :as fs]
             [babashka.http-client :as http]
             [babashka.process :as process]
             [clojure.java.io :as io]
@@ -69,12 +70,12 @@
   whether the process may end now, :exit! what ends it}`; everything
   but `:db` has a default."
   [opts]
-  (let [handle (merge {:latest-url (or (System/getenv "PCHAT_UPDATE_URL") latest-url)
-                       :bb (or (System/getenv "BB") "bb")
+  (let [handle (merge {:latest-url (or (env/get "PCHAT_UPDATE_URL") latest-url)
+                       :bb (or (env/get "BB") "bb")
                        :idle? (constantly true)
                        :exit! (fn [code] (System/exit code))
                        :current (current-version)
-                       :jar (running-jar (System/getenv "PCHAT_JAR"))}
+                       :jar (running-jar (env/get "PCHAT_JAR"))}
                       opts)]
     ;; The running version is on the page from the first frame on
     ;; (the sidebar shows it next to the name), before any lookup.

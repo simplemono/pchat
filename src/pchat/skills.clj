@@ -7,7 +7,8 @@
   onboarding: `title`, `summary`, `ask` (the first thing the chat says),
   `placeholder` and `inputs` (\"video,audio\"), each with a `-de`
   variant for German."
-  (:require [babashka.fs :as fs]
+  (:require [pchat.env :as env]
+            [babashka.fs :as fs]
             [cheshire.core :as json]
             [clojure.string :as str]))
 
@@ -64,7 +65,7 @@
 (defn checkout
   "The agentitos checkout named by `PCHAT_AGENTITOS`, or nil."
   []
-  (when-let [dir (not-empty (System/getenv "PCHAT_AGENTITOS"))]
+  (when-let [dir (not-empty (env/get "PCHAT_AGENTITOS"))]
     (when (fs/directory? dir)
       (str (fs/canonicalize dir)))))
 

@@ -416,6 +416,25 @@
    (fn [_]
      (show! (chat-id-of js/location.pathname)))))
 
+(defn- close-menus!
+  "The open actions menus of the sidebar (`<details>`, see
+  `pchat.view/chat-actions`) but the one whose three dots were just
+  clicked: the browser toggles that one itself."
+  [^js target]
+  (doseq [^js details (array-seq (js/document.querySelectorAll "details.actions[open]"))]
+    (when-not (and target
+                   (.contains details target)
+                   (.closest target "summary"))
+      (.removeAttribute details "open"))))
+
+(defn- watch-menus!
+  "A click anywhere, or Escape, closes the actions menus."
+  []
+  (js/document.addEventListener "click" (fn [^js event] (close-menus! (.-target event))))
+  (js/document.addEventListener "keydown" (fn [^js event]
+                                            (when (= "Escape" (.-key event))
+                                              (close-menus! nil)))))
+
 (defn url-alias
   "`[:ui/url {:ui/path \"/chat/<id>\"}]` in a frame: the page of the chat
   the server shows; when the address bar says another, it is corrected
@@ -432,10 +451,28 @@
           (.setAttribute base "href" href)))))
   [:span.url {:hidden true}])
 
+(defn- ticked
+  "`[:pchat/checked text]` in an action: the text, its `{checked}` the
+  values of the inputs ticked in the block of the clicked button (a
+  ```hiccup block of an answer, `pchat.genui`), comma-separated, or a
+  dash when none is."
+  [{:keys [ui.action/x replicant/js-event]}]
+  (when (and (vector? x) (= :pchat/checked (first x)))
+    (let [^js button (some-> js-event .-target (.closest "button"))
+          ^js block (some-> button (.closest ".genui"))
+          values (when block
+                   (->> (.querySelectorAll block "input:checked")
+                        (array-seq)
+                        (map #(.-value ^js %))
+                        (remove str/blank?)))]
+      (str/replace (str (second x)) "{checked}" (if (seq values) (str/join ", " values) "–")))))
+
 (def register
   "rchat's aliases, then pchat's composer, which replaces rchat's: the
   later registration of a kind wins; the theme choice; the URL of the
-  chat; and `:pchat/tabid` in a command, the id of this tab."
+  chat; `:pchat/tabid` in a command, the id of this tab; and
+  `[:pchat/checked text]`, the text with the choices ticked in an
+  answer's block."
   (concat rchat/register
           [{:ui.alias/kind :ui/composer
             :ui.alias/fn composer}
@@ -446,10 +483,22 @@
            {:ui.action-enricher/kind :pchat/tabid
             :ui.action-enricher/fn (fn [{:keys [ui.action/x]}]
                                      (when (= :pchat/tabid x)
-                                       state/tabid))}]))
+                                       state/tabid))}
+           {:ui.action-enricher/kind :pchat/checked
+            :ui.action-enricher/fn ticked}]))
 
 (defn init!
   []
   (swap! state/store assoc :pchat/theme (stored-theme))
   (watch-chat-links!)
-  (rframes/init! {:register register}))
+  (watch-menus!)
+  ;; pchat's own page names its command endpoint in a meta tag, so a
+  ;; page opened at /chat/<id> posts to /command and not next to its
+  ;; path. This bundle also runs inside a design's page (the controls
+  ;; runtime of an artifact project), which has no such tag: there the
+  ;; commands stay relative and reach the project's own server through
+  ;; the proxy.
+  (rframes/init! {:register register
+                  :ui/command-endpoint (or (some-> (js/document.querySelector "meta[name=pchat-command]")
+                                                   (.getAttribute "content"))
+                                           "command")}))

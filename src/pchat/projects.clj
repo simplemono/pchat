@@ -97,7 +97,7 @@
                             :err log
                             :extra-env {"PORT" (str port)
                                         "NREPL_PORT" (str nrepl-port)
-                                        "TMPDIR" (str (chats/tmp-dir chats-dir id))
+                                        "TMPDIR" (chats/tmp-path chats-dir id)
                                         "PCHAT_BASE" (str (chats/url id) "/artifacts/" name)
                                         ;; The project exits by itself when
                                         ;; pchat is gone, hook or no hook.
