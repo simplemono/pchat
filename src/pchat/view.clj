@@ -246,6 +246,94 @@
                                                        :command/data {:id id}}]]}}
      [:i18n :chat/delete]]]])
 
+(defn- connection-row
+  "One connection: what it is, how its last test went, and what can be
+  done with it. A secret is named, never shown."
+  [{:keys [name address enabled? secrets tools error testing?]}]
+  [:div.connection {:replicant/key name
+                    :class (when-not enabled? "off")}
+   [:div.about
+    [:span.name name]
+    [:span.address {:title address} address]
+    (for [secret secrets]
+      [:span.secret (str secret ": ••••")])]
+   [:span.state {:class (when error "error")
+                 :title (when (seq tools) (str/join ", " tools))}
+    (cond
+      testing? [:i18n :connections/testing]
+      (not enabled?) [:i18n :connections/off]
+      error error
+      tools [:i18n :connections/tools {:count (count tools)}]
+      :else [:i18n :connections/untested])]
+   [:div.actions
+    [:button.link {:on {:click [[:data/command {:command/kind :connections/test
+                                                :command/data {:name name}}]]}}
+     [:i18n :connections/test]]
+    [:button.link {:on {:click [[:data/command {:command/kind :connections/enable
+                                                :command/data {:name name
+                                                               :enabled? (not enabled?)}}]]}}
+     (if enabled? [:i18n :connections/turn-off] [:i18n :connections/turn-on])]
+    [:button.link.danger {:on {:click [[:data/command {:command/kind :connections/remove
+                                                       :command/data {:name name}}]]}}
+     [:i18n :connections/remove]]]])
+
+(defn- field
+  "A labelled field of a form, with a hint under it when there is one."
+  [label input & [hint]]
+  [:label.field
+   [:span.label label]
+   input
+   (when hint
+     [:small.hint hint])])
+
+(defn- connection-form
+  "Name, address or program, an access line, when the agent sees the
+  tools; keyed by the number of connections, so that a new one empties
+  the fields."
+  [connections]
+  [:div.box.add {:replicant/key (str "add-" (count connections))}
+   [:h2 [:i18n :connections/add-title]]
+   (field [:i18n :connections/name]
+          [:input {:placeholder [:i18n :connections/name-placeholder]
+                   :on {:input [[:store/assoc :pchat/connection-name :event/target.value]]}}])
+   (field [:i18n :connections/address]
+          [:input {:placeholder [:i18n :connections/address-placeholder]
+                   :on {:input [[:store/assoc :pchat/connection-address :event/target.value]]}}])
+   (field [:i18n :connections/secret]
+          [:input {:placeholder [:i18n :connections/secret-placeholder]
+                   :on {:input [[:store/assoc :pchat/connection-secret :event/target.value]]}}]
+          [:i18n :connections/secret-hint])
+   (field [:i18n :connections/exposure]
+          [:select {:on {:change [[:store/assoc :pchat/connection-exposure :event/target.value]]}}
+           [:option {:value "deferred" :selected true} [:i18n :connections/exposure-deferred]]
+           [:option {:value "direct"} [:i18n :connections/exposure-direct]]])
+   [:button.primary {:on {:click [[:data/command {:command/kind :connections/add
+                                                  :command/data {:name [:store/deref :pchat/connection-name]
+                                                                 :address [:store/deref :pchat/connection-address]
+                                                                 :secret [:store/deref :pchat/connection-secret]
+                                                                 :exposure [:store/deref :pchat/connection-exposure]}}
+                                   {:on-success [[:store/dissoc :pchat/connection-name]
+                                                 [:store/dissoc :pchat/connection-address]
+                                                 [:store/dissoc :pchat/connection-secret]]}]]}}
+    [:i18n :connections/add]]])
+
+(defn- agent-form
+  "The service named, the agent of the chat the tab shows finds out
+  the rest."
+  [id]
+  [:div.box.agent
+   [:h2 [:i18n :connections/agent-title]]
+   [:p [:i18n :connections/agent-explain]]
+   [:div.row
+    [:input {:placeholder [:i18n :connections/agent-placeholder]
+             :aria-label [:i18n :connections/agent-placeholder]
+             :on {:input [[:store/assoc :pchat/connection-service :event/target.value]]}}]
+    [:button {:on {:click [[:data/command {:command/kind :connections/agent
+                                           :command/data {:id id
+                                                          :service [:store/deref :pchat/connection-service]}}
+                            {:on-success [[:store/dissoc :pchat/connection-service]]}]]}}
+     [:i18n :connections/agent]]]])
+
 (defn connections-tab
   "The Connections tab of the settings: what a connection is, the
   connections one row each, the form for a new one, and the way to let
