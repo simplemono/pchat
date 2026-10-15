@@ -119,12 +119,13 @@
     [:i18n :job/zone-label]
     " "
     [:select {:replicant/key (str id "-tz")
-              :value tz
               :on {:change [[:data/command {:command/kind :job/tz
                                             :command/data {:id id
                                                            :tz :event/target.value}}]]}}
+     ;; Chosen on the option: a value on the select itself is set before
+     ;; the options are there and lands on the first.
      (for [zone (if (some #{tz} schedule/zones) schedule/zones (cons tz schedule/zones))]
-       [:option {:replicant/key zone :value zone} zone])]
+       [:option {:replicant/key zone :value zone :selected (= zone tz)} zone])]
     (when schedule
       (list
        " "

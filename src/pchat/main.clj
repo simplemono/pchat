@@ -936,7 +936,11 @@
       (nil? chat) (command/rejected w (say w [:i18n :command/no-such-chat]))
       (str/blank? tab) (command/rejected w (say w [:i18n :command/no-such-tab]))
       :else
-      (let [name (let [n (view/chat-name chat)] (if (string? n) n (say w n)))
+      (let [name (let [n (view/chat-name chat)
+                       n (if (string? n) n (say w n))]
+                   ;; A chat is named after its first message, which can
+                   ;; be a paragraph; a job's name is a line.
+                   (if (< 60 (count n)) (str (str/trim (subs n 0 59)) "…") n))
             tz (if (schedule/valid-zone? (str tz)) (str tz) "UTC")
             job (jobs/create! workspace {:name name :from (str (chats/dir chats-dir id)) :tz tz})
             cid (:chat job)
@@ -1232,6 +1236,23 @@
   [w]
   (assoc w :ring/response http/not-found))
 
+
+(defn- or-template-file
+  "The conversation of a job begins with the history of the chat it
+  came from, whose pictures and clips went into the job's template:
+  what the conversation's own folder has not under `kind` (artifacts or
+  uploads) is served from the template, so that the history shows."
+  [id kind w]
+  (if-let [job (and (= 404 (get-in w [:ring/response :status]))
+                    (get-in @db [:chats id :job]))]
+    (let [subpath (str (get-in w [:ring/route-params :*]))
+          file (when-not (some #(str/starts-with? % ".") (str/split subpath #"/"))
+                 (http/resolve-file (io/file (jobs/template-dir workspace job) kind) subpath))]
+      (if file
+        (assoc w :ring/response (http/file-response (:ring/request w) file))
+        w))
+    w))
+
 (defn- chat-get
   "GET /chat/<id>: the page; /chat/<id>/artifacts/<path>: a running
   project's page, else the file; /chat/<id>/uploads/<name>: the file."
@@ -1252,10 +1273,10 @@
             w (projects/handler projects id w)]
         (if (:ring/response w)
           w
-          (artifacts/file-handler artifacts id w)))
+          (or-template-file id "artifacts" (artifacts/file-handler artifacts id w))))
 
       (str/starts-with? rest "uploads/")
-      (uploads/file-handler (chats/uploads-dir chats-dir id) (under w rest "uploads/"))
+      (or-template-file id "uploads" (uploads/file-handler (chats/uploads-dir chats-dir id) (under w rest "uploads/")))
 
       :else
       (not-found w))))
