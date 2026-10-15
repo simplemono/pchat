@@ -13,6 +13,7 @@
  :chat/ready "Ready"
  :chat/you "You"
  :chat/handover "Ready for you"
+ :chat/actions "Actions"
  :chat/delete "Delete"
  :chat/delete-sure "Delete this chat for good?"
  :chat/delete-yes "Delete"

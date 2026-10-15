@@ -239,37 +239,46 @@
       (some #(when (= :user (:kind %)) (first (str/split-lines (:text %)))) items)
       [:i18n :chat/untitled]))
 
-(defn- delete-controls
-  "Delete asks once: the first click arms it, the second deletes."
-  [{:keys [id]} deleting]
-  (if (= id deleting)
-    [:span.confirm
-     [:i18n :chat/delete-sure]
-     [:button.link.danger {:on {:click [[:data/command {:command/kind :chat/delete
-                                                        :command/data {:id id}}]]}}
-      [:i18n :chat/delete-yes]]
-     [:button.link {:on {:click [[:data/command {:command/kind :chat/keep}]]}}
-      [:i18n :chat/keep]]]
-    [:button.link.delete {:on {:click [[:data/command {:command/kind :chat/delete
+(defn- delete-confirm
+  "The row of a chat whose deletion is armed (see `:chat/delete`): the
+  question, then delete for good or keep."
+  [id]
+  [:div.confirm
+   [:span [:i18n :chat/delete-sure]]
+   [:span.choices
+    [:button.link.danger {:on {:click [[:data/command {:command/kind :chat/delete
                                                        :command/data {:id id}}]]}}
-     [:i18n :chat/delete]]))
+     [:i18n :chat/delete-yes]]
+    [:button.link {:on {:click [[:data/command {:command/kind :chat/keep}]]}}
+     [:i18n :chat/keep]]]])
 
-(defn- job-button
-  "Turns the chat into a job (see `pchat.jobs`), shown in this tab, in
-  the browser's time zone."
-  [{:keys [id]}]
-  [:button.link.job {:on {:click [[:data/command {:command/kind :job/turn
-                                                  :command/data {:id id
-                                                                 :tab :pchat/tabid
-                                                                 :tz :pchat/timezone}}]]}}
-   [:i18n :job/turn]])
-
-(defn- hook-button
-  [{:keys [id hook]} hook-open]
-  [:button.link.hook {:class (str (when hook "on") (when (= id hook-open) " open"))
-                      :on {:click [[:data/command {:command/kind :hook/toggle
-                                                   :command/data {:id id}}]]}}
-   [:i18n :hook/button]])
+(defn- chat-actions
+  "The menu behind the three dots of a sidebar row: what one can do with
+  that chat, like the menu of a chat on claude.ai. A <details>, so the
+  browser opens and closes it; the runtime (`pchat.client`) closes it
+  on a click elsewhere. The job (see `pchat.jobs`) and the webhook name
+  the tab, so that the job's page or the chat with its panel opens
+  here; a delete arms the question in the row. `:pchat/timezone` is the
+  browser's time zone, the job's from then on."
+  [{:keys [id hook]}]
+  [:details.actions
+   [:summary {:aria-label [:i18n :chat/actions]
+              :title [:i18n :chat/actions]}
+    "\u22ee"]
+   [:div.items
+    [:button.item.job {:on {:click [[:data/command {:command/kind :job/turn
+                                                    :command/data {:id id
+                                                                   :tab :pchat/tabid
+                                                                   :tz :pchat/timezone}}]]}}
+     [:i18n :job/turn]]
+    [:button.item.hook {:class (when hook "on")
+                        :on {:click [[:data/command {:command/kind :hook/toggle
+                                                     :command/data {:id id
+                                                                    :tab :pchat/tabid}}]]}}
+     [:i18n :hook/button]]
+    [:button.item.danger {:on {:click [[:data/command {:command/kind :chat/delete
+                                                       :command/data {:id id}}]]}}
+     [:i18n :chat/delete]]]])
 
 (defn hook-panel
   "Under the header when opened: the address of the webhook to paste
@@ -478,10 +487,10 @@
 
 (defn header
   "The name of the chat is a field: a change renames it. `:task` is the
-  title of the chat's task, when it has one. On a job's page (`:job`,
-  the job) the chat is the job's conversation: the field renames the
-  job, and the job's own actions are beside the chat."
-  [{:keys [id status cost name] :as chat} {:keys [deleting hook-open task job]}]
+  title of the chat's task, when it has one. The actions on the chat
+  are in its sidebar row (`chat-actions`). On a job's page (`:job`, the
+  job) the chat is the job's conversation: the field renames the job."
+  [{:keys [id status cost name] :as chat} {:keys [task job]}]
   [:header.bar
    ;; On a phone the sidebar is a drawer; this opens it (see the
    ;; checkbox in `page`).
@@ -508,12 +517,7 @@
       :working [:i18n :chat/working]
       [:i18n :chat/ready])]
    (when (pos? cost)
-     [:span.spend (format "$%.2f" cost)])
-   (when-not job
-     (list
-      (job-button chat)
-      (hook-button chat hook-open)
-      (delete-controls chat deleting)))])
+     [:span.spend (format "$%.2f" cost)])])
 
 (defn composer
   "`:placeholder` in `opts` is the task's, the general one without. The
@@ -560,7 +564,7 @@
   opens here."
   ([db]
    (sidebar db {}))
-  ([{:keys [chats jobs settings-open update]} {:keys [id locale] :as opts}]
+  ([{:keys [chats jobs deleting settings-open update]} {:keys [id locale] :as opts}]
   (let [shown id
         shown-job (get-in opts [:job :job :id])
         ;; The conversations of the jobs are on the jobs' pages.
@@ -585,11 +589,15 @@
         [:li {:replicant/key id
               :class (str (when (= id shown) "current")
                           (when (= :working status) " working"))}
-         [:a.row {:href (chats/url id)
-                  :data-chat id}
-          [:span.name (chat-name chat)]
-          (when (= :working status)
-            [:span.dot])]])]
+         (if (= id deleting)
+           (delete-confirm id)
+           (list
+            [:a.row {:href (chats/url id)
+                     :data-chat id}
+             [:span.name (chat-name chat)]
+             (when (= :working status)
+               [:span.dot])]
+            (chat-actions chat)))])]
      ;; The jobs under the chats: name, state, the next run.
      (when (seq jobs)
        (list
@@ -723,9 +731,7 @@
         (migrate-banner migration)
         (when note
           [:div.banner.note note])
-        (header chat {:deleting deleting
-                      :hook-open hook-open
-                      :task (some-> skill (skills/text :title locale))
+        (header chat {:task (some-> skill (skills/text :title locale))
                       :job (:job job)})
         (when (and (not job?) (= id hook-open))
           (hook-panel chat opts))

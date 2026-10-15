@@ -209,7 +209,7 @@
                             :out :string
                             :err :string
                             :extra-env (merge (or env {})
-                                              {"TMPDIR" (str (chats/tmp-dir chats-dir id))
+                                              {"TMPDIR" (chats/tmp-path chats-dir id)
                                                "PCHAT_HOOK_METHOD" (str/upper-case (name (or (:request-method request) :post)))
                                                "PCHAT_HOOK_QUERY" (str (:query-string request))
                                                "PCHAT_HOOK_CONTENT_TYPE" (str (get-in request [:headers "content-type"]))})})]

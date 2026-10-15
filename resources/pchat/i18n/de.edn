@@ -11,6 +11,7 @@
  :chat/ready "Bereit"
  :chat/you "Du"
  :chat/handover "Bereit für dich"
+ :chat/actions "Aktionen"
  :chat/delete "Löschen"
  :chat/delete-sure "Diesen Chat endgültig löschen?"
  :chat/delete-yes "Löschen"

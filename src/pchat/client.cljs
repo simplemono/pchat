@@ -439,6 +439,25 @@
        (show-job! job)
        (show! (chat-id-of js/location.pathname))))))
 
+(defn- close-menus!
+  "The open actions menus of the sidebar (`<details>`, see
+  `pchat.view/chat-actions`) but the one whose three dots were just
+  clicked: the browser toggles that one itself."
+  [^js target]
+  (doseq [^js details (array-seq (js/document.querySelectorAll "details.actions[open]"))]
+    (when-not (and target
+                   (.contains details target)
+                   (.closest target "summary"))
+      (.removeAttribute details "open"))))
+
+(defn- watch-menus!
+  "A click anywhere, or Escape, closes the actions menus."
+  []
+  (js/document.addEventListener "click" (fn [^js event] (close-menus! (.-target event))))
+  (js/document.addEventListener "keydown" (fn [^js event]
+                                            (when (= "Escape" (.-key event))
+                                              (close-menus! nil)))))
+
 (defn url-alias
   "`[:ui/url {:ui/path \"/chat/<id>\"}]` in a frame: the page of the chat
   the server shows; when the address bar says another, it is corrected
@@ -487,6 +506,7 @@
   []
   (swap! state/store assoc :pchat/theme (stored-theme))
   (watch-chat-links!)
+  (watch-menus!)
   ;; pchat's own page names its command endpoint in a meta tag, so a
   ;; page opened at /chat/<id> posts to /command and not next to its
   ;; path. This bundle also runs inside a design's page (the controls
