@@ -32,6 +32,18 @@
                                                                   :text "The first one"}}]]}}
             "Take the first"]
            (genui/sanitize [:button {:send "The first one"} "Take the first"] chat))))
+  (testing "with {checked} in its text the browser fills in the ticked choices"
+    (is (= [:pchat/checked "Post to: {checked}"]
+           (get-in (genui/sanitize [:button {:send "Post to: {checked}"} "Plan"] chat)
+                   [1 :on :click 0 1 :command/data :text]))))
+  (testing "an input is a checkbox or a radio button, nothing else"
+    (is (= [:label {} [:input {:type "checkbox" :name "p" :value "Instagram" :checked true}] "Instagram"]
+           (genui/sanitize [:label [:input {:type "checkbox" :name "p" :value "Instagram" :checked true}] "Instagram"] chat)))
+    (is (= [:input {:type "radio" :value "a"}] (genui/sanitize [:input {:type "radio" :value "a"}] chat)))
+    (is (nil? (genui/sanitize [:input {:type "text" :value "x"}] chat)))
+    (is (nil? (genui/sanitize [:input {:type "file"}] chat)))
+    (is (nil? (genui/sanitize [:input {:value "x"}] chat)) "no type is a text field")
+    (is (= [:button {} "x"] (genui/sanitize [:button {:type "submit"} "x"] chat))))
   (testing "a button opens an artifact of the chat"
     (is (= {:id "c" :path "card"}
            (get-in (genui/sanitize [:button {:open "/artifacts/card"} "Show"] chat)

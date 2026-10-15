@@ -451,10 +451,28 @@
           (.setAttribute base "href" href)))))
   [:span.url {:hidden true}])
 
+(defn- ticked
+  "`[:pchat/checked text]` in an action: the text, its `{checked}` the
+  values of the inputs ticked in the block of the clicked button (a
+  ```hiccup block of an answer, `pchat.genui`), comma-separated, or a
+  dash when none is."
+  [{:keys [ui.action/x replicant/js-event]}]
+  (when (and (vector? x) (= :pchat/checked (first x)))
+    (let [^js button (some-> js-event .-target (.closest "button"))
+          ^js block (some-> button (.closest ".genui"))
+          values (when block
+                   (->> (.querySelectorAll block "input:checked")
+                        (array-seq)
+                        (map #(.-value ^js %))
+                        (remove str/blank?)))]
+      (str/replace (str (second x)) "{checked}" (if (seq values) (str/join ", " values) "–")))))
+
 (def register
   "rchat's aliases, then pchat's composer, which replaces rchat's: the
   later registration of a kind wins; the theme choice; the URL of the
-  chat; and `:pchat/tabid` in a command, the id of this tab."
+  chat; `:pchat/tabid` in a command, the id of this tab; and
+  `[:pchat/checked text]`, the text with the choices ticked in an
+  answer's block."
   (concat rchat/register
           [{:ui.alias/kind :ui/composer
             :ui.alias/fn composer}
@@ -465,7 +483,9 @@
            {:ui.action-enricher/kind :pchat/tabid
             :ui.action-enricher/fn (fn [{:keys [ui.action/x]}]
                                      (when (= :pchat/tabid x)
-                                       state/tabid))}]))
+                                       state/tabid))}
+           {:ui.action-enricher/kind :pchat/checked
+            :ui.action-enricher/fn ticked}]))
 
 (defn init!
   []
