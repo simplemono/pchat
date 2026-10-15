@@ -17,6 +17,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str]
             [org.httpkit.server :as server]
+            [pchat.artifacts :as artifacts]
             [pchat.chats :as chats]
             [pchat.nrepl :as nrepl]))
 
@@ -322,13 +323,26 @@
   (let [[name & rest] (str/split (str subpath) #"/" 2)]
     [name (or (first rest) "")]))
 
+(defn- media-file?
+  "A picture, a video or a sound the agent put into the project's
+  folder (a clip it cut, a still): served as the file it is, since the
+  project's process serves only its page."
+  [chats-dir id name rest]
+  (and (not (str/blank? rest))
+       (#{:image :video :audio} (artifacts/kind rest))
+       (not-any? #(str/starts-with? % ".") (str/split rest #"/"))
+       (fs/regular-file? (io/file (chats/artifacts-dir chats-dir id) name rest))))
+
 (defn handler
   "The handler of /chat/<id>/artifacts/*, the rest of the path under
-  `:*`: a running project's page and stream go to its process; anything
-  else is left to the caller, without a response."
-  [{:keys [procs db]} id w]
+  `:*`: a running project's page and stream go to its process; its
+  media files and anything else are left to the caller, without a
+  response."
+  [{:keys [procs db chats-dir]} id w]
   (let [[name rest] (split-path (get-in w [:ring/route-params :*]))
         {:keys [port]} (get @procs [id name])]
-    (if (and port (get-in @db [:chats id :projects name :ready-at]))
+    (if (and port
+             (get-in @db [:chats id :projects name :ready-at])
+             (not (media-file? chats-dir id name rest)))
       (proxy! port rest w)
       w)))
