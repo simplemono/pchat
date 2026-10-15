@@ -1271,9 +1271,14 @@ html.theme-dark {
   font-weight: 600;
 }
 
-.pchat .rchat .job button.link {
+/* Run now, Pause, Delete, Save and Copy stay rchat's buttons; the quick
+   picks, Cancel and the way to turn the schedule off read as links. */
+.pchat .rchat .job .picks button,
+.pchat .rchat .job button.off,
+.pchat .rchat .job .proposal button:not(.save) {
   padding: 2px 6px;
   border: 0;
+  border-radius: 0;
   background: none;
   color: var(--rchat-muted);
   font: inherit;
@@ -1281,17 +1286,25 @@ html.theme-dark {
   cursor: pointer;
 }
 
-.pchat .rchat .job button.link:hover {
+.pchat .rchat .job .picks button:hover,
+.pchat .rchat .job button.off:hover,
+.pchat .rchat .job .proposal button:not(.save):hover {
   color: var(--rchat-text);
 }
 
-.pchat .rchat .job button.link.danger {
+.pchat .rchat .job button.danger {
   color: #b42318;
 }
 
-.pchat .rchat .job button.link.save {
-  color: var(--rchat-text);
+.pchat .rchat .job button.save {
   font-weight: 600;
+}
+
+.pchat .rchat .job .actions .confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
 }
 
 .pchat .rchat .job .note {
