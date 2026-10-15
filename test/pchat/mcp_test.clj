@@ -126,3 +126,23 @@
         ((:stop secured))
         ((:stop sse))
         (fs/delete-tree dir)))))
+
+(deftest composio-direct-test
+  (let [dir (temp-dir)
+        handle (mcp/handle {:db (atom {}) :workspace dir})]
+    (mcp/add! handle "storrito-agent" {:url "https://a.b/agent/mcp" :headers {"Authorization" "Bearer t"}})
+    (mcp/add! handle "notes" {:url "https://c.d/mcp"})
+    (testing "untested, nothing is known to be Composio"
+      (is (nil? (mcp/composio-direct! handle))))
+    (io/make-parents (io/file dir ".pchat" "connections.edn"))
+    (spit (io/file dir ".pchat" "connections.edn")
+          (pr-str {"storrito-agent" {:tools ["COMPOSIO_SEARCH_TOOLS" "COMPOSIO_MANAGE_CONNECTIONS"] :tested 1}
+                   "notes" {:tools ["search_notes"] :tested 1}}))
+    (testing "a Composio connection becomes direct, another stays as it is"
+      (is (true? (mcp/composio-direct! handle)))
+      (is (= "direct" (get-in (mcp/servers handle) ["storrito-agent" "exposure"])))
+      (is (= "deferred" (get-in (mcp/servers handle) ["notes" "exposure"])))
+      (is (= "Bearer t" (get-in (mcp/servers handle) ["storrito-agent" "headers" "Authorization"]))))
+    (testing "once direct, the file is left alone"
+      (is (nil? (mcp/composio-direct! handle))))))
+

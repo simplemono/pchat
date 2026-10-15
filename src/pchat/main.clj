@@ -1172,6 +1172,9 @@
   (install-workspace!)
   (swap! db assoc :skills (skills/load-all (skills/checkout)))
   (load-chats!)
+  ;; a Composio connection the Storrito agent brings, declared deferred:
+  ;; direct before the first chat starts
+  (mcp/composio-direct! connections)
   (mcp/load! connections)
   (migrate/check! migration)
   (poll-artifacts!)
