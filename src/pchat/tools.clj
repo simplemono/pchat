@@ -3,7 +3,8 @@
   for a video, HyperFrames for its compositions. Looked up on the PATH at
   start; the agent's shell gets them as environment variables, so that
   HyperFrames uses the Chrome of the machine and downloads none."
-  (:require [babashka.fs :as fs]))
+  (:require [pchat.env :as env]
+            [babashka.fs :as fs]))
 
 (def chrome-names
   ["google-chrome" "google-chrome-stable" "chromium" "chromium-browser" "chrome"])
@@ -12,16 +13,18 @@
   "`CHROME` in the environment, else the first of the usual names on the
   PATH, else nil."
   []
-  (or (not-empty (System/getenv "CHROME"))
+  (or (not-empty (env/get "CHROME"))
       (some #(some-> (fs/which %) str) chrome-names)))
 
 (defn env
-  "The environment of the agent's shell."
+  "The environment of the agent's shell: what .env holds and the process
+  does not (see `pchat.env`), the tools' settings, Chrome."
   []
   (let [chrome (chrome)]
-    (cond-> {"HYPERFRAMES_NO_TELEMETRY" "1"
-             "HYPERFRAMES_SKIP_SKILLS" "1"
-             "PUPPETEER_SKIP_DOWNLOAD" "1"}
+    (cond-> (assoc (env/below)
+                   "HYPERFRAMES_NO_TELEMETRY" "1"
+                   "HYPERFRAMES_SKIP_SKILLS" "1"
+                   "PUPPETEER_SKIP_DOWNLOAD" "1")
       chrome (assoc "CHROME" chrome
                     "HYPERFRAMES_BROWSER_PATH" chrome
                     "PRODUCER_HEADLESS_SHELL_PATH" chrome))))

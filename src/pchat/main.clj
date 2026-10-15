@@ -4,6 +4,10 @@
       PORT             default 8080
       PCHAT_WORKSPACE  the folder of the chats, default ./workspace
       PCHAT_PROVIDER   default openrouter (OPENROUTER_API_KEY in the environment)
+
+  The variables come from the environment, or from .env and .env.local
+  in the working directory (see `pchat.env`): a hand start next to the
+  file needs no export.
       PCHAT_MODEL      default openai/gpt-6.1-sol
       PCHAT_TOKEN      a secret: the page is behind the link that sets the cookie
       PCHAT_AGENTITOS  an agentitos checkout: its skills are the tasks a chat can be for
@@ -19,7 +23,8 @@
   file when it is first shown. Which chat a browser tab shows is the
   tab's: its URL, `/chat/<id>`, until a click in the sidebar names
   another (`:tabs`)."
-  (:require [babashka.nrepl.server :as nrepl-server]
+  (:require [pchat.env :as env]
+            [babashka.nrepl.server :as nrepl-server]
             [clojure.java.io :as io]
             [clojure.string :as str]
             [org.httpkit.server :as server]
@@ -51,23 +56,23 @@
 (def workspace
   ;; Absolute: pi and the artifact projects run inside it and resolve
   ;; relative paths against their own directory.
-  (.getAbsoluteFile (io/file (or (System/getenv "PCHAT_WORKSPACE") "./workspace"))))
+  (.getAbsoluteFile (io/file (or (env/get "PCHAT_WORKSPACE") "./workspace"))))
 
 (def chats-dir
   (io/file workspace "chats"))
 
 (def bb
-  (or (System/getenv "BB") "bb"))
+  (or (env/get "BB") "bb"))
 
 (def provider
-  (or (System/getenv "PCHAT_PROVIDER") "openrouter"))
+  (or (env/get "PCHAT_PROVIDER") "openrouter"))
 
 (def model
-  (or (System/getenv "PCHAT_MODEL") "openai/gpt-6.1-sol"))
+  (or (env/get "PCHAT_MODEL") "openai/gpt-6.1-sol"))
 
 (def key-missing?
   (and (= "openrouter" provider)
-       (str/blank? (System/getenv "OPENROUTER_API_KEY"))))
+       (str/blank? (env/get "OPENROUTER_API_KEY"))))
 
 (defonce db
   (atom {:chats {}
@@ -417,7 +422,7 @@
   on the PATH, the chat's own folder for temporary files."
   [id]
   (assoc (tools/env)
-         "PATH" (str (.getPath (io/file workspace "bin")) ":" (System/getenv "PATH"))
+         "PATH" (str (.getPath (io/file workspace "bin")) ":" (env/get "PATH"))
          "TMPDIR" (chats/tmp-path chats-dir id)))
 
 (defn- ensure-pi!
@@ -1127,9 +1132,9 @@
   `.nrepl-port` in the workspace for editors; `PCHAT_NREPL=off` leaves
   it out. Answers the port, nil when off."
   [workspace]
-  (when-not (= "off" (System/getenv "PCHAT_NREPL"))
+  (when-not (= "off" (env/get "PCHAT_NREPL"))
     (let [server (nrepl-server/start-server! {:host "127.0.0.1"
-                                              :port (parse-long (or (System/getenv "PCHAT_NREPL_PORT") "0"))
+                                              :port (parse-long (or (env/get "PCHAT_NREPL_PORT") "0"))
                                               :quiet true})
           port (.getLocalPort ^java.net.ServerSocket (:socket server))]
       (spit (io/file workspace ".nrepl-port") (str port))
@@ -1160,8 +1165,8 @@
                                                        (render/stop-all! renders)
                                                        (hooks/stop-all! hooks))))
   (sse/watch! db)
-  (let [port (parse-long (or (System/getenv "PORT") "8080"))
-        token (System/getenv "PCHAT_TOKEN")
+  (let [port (parse-long (or (env/get "PORT") "8080"))
+        token (env/get "PCHAT_TOKEN")
         nrepl-port (start-nrepl! workspace)]
     ;; http-kit holds a request body in memory: the browser sends a clip
     ;; in pieces of 8 MB (`pchat.uploads`), this leaves room for a clip
@@ -1173,7 +1178,7 @@
     ;; a hand start prints the link to open.
     (println (str "pchat on "
                   (cond
-                    (and token (System/getenv "PCHAT_JAR")) (str "http://localhost:" port " (the token is in the environment)")
+                    (and token (env/get "PCHAT_JAR")) (str "http://localhost:" port " (the token is in the environment)")
                     token (auth/link (str "http://localhost:" port) token)
                     :else (str "http://localhost:" port))
                   ", " (count (:chats @db)) " chats, the model is " provider "/" model

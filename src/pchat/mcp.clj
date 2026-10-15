@@ -14,7 +14,8 @@
                           :tools [tool names] :tested ms :error :testing?}}
       :settings-open     whether the settings are shown in place of the chat,
       :settings-tab      the tab there (`pchat.view/tabs`)"
-  (:require [babashka.http-client :as http]
+  (:require [pchat.env :as env]
+            [babashka.http-client :as http]
             [babashka.process :as process]
             [cheshire.core :as json]
             [clojure.edn :as edn]
@@ -257,7 +258,7 @@
   (into {}
         (for [[k v] values]
           [k (str/replace (str v) #"\$\{([A-Za-z_][A-Za-z0-9_]*)\}"
-                          (fn [[_ name]] (or (System/getenv name) "")))])))
+                          (fn [[_ name]] (or (env/get name) "")))])))
 
 (defn- lower-headers
   [headers]
