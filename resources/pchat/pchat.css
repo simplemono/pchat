@@ -792,13 +792,34 @@ html.theme-dark {
   border: 1px solid var(--rchat-line);
   border-radius: 8px;
   background: var(--rchat-bg);
-  color: inherit;
+  /* the text of its own background, not of what it sits on: on a card
+     the agent made dark with light text the button stays readable; a
+     button the agent colours brings its own `color` in `:style` */
+  color: var(--rchat-text);
   font: inherit;
   cursor: pointer;
 }
 
 .rchat .genui button:hover {
   border-color: var(--rchat-text);
+}
+
+/* a choice of several: a checkbox or a radio button with its label */
+.rchat .genui label:has(input) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  cursor: pointer;
+}
+
+.rchat .genui input[type="checkbox"],
+.rchat .genui input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--rchat-text);
+  cursor: pointer;
 }
 
 .rchat .genui ul {
