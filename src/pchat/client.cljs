@@ -481,8 +481,13 @@
   []
   (swap! state/store assoc :pchat/theme (stored-theme))
   (watch-chat-links!)
-  ;; The commands go to /command whatever the page's path: rframes
-  ;; posts them next to the page, which for a page opened at
-  ;; /chat/<id> or /job/<id> would be /chat/command, nothing.
+  ;; pchat's own page names its command endpoint in a meta tag, so a
+  ;; page opened at /chat/<id> posts to /command and not next to its
+  ;; path. This bundle also runs inside a design's page (the controls
+  ;; runtime of an artifact project), which has no such tag: there the
+  ;; commands stay relative and reach the project's own server through
+  ;; the proxy.
   (rframes/init! {:register register
-                  :ui/command-endpoint "/command"}))
+                  :ui/command-endpoint (or (some-> (js/document.querySelector "meta[name=pchat-command]")
+                                                   (.getAttribute "content"))
+                                           "command")}))
