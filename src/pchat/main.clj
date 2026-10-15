@@ -911,6 +911,9 @@
 
 (def head
   (str "<title>pchat</title>"
+       ;; Read by the client: where this page's commands go (see
+       ;; `pchat.client/init!`).
+       "<meta name=\"pchat-command\" content=\"/command\">"
        "<link rel=\"icon\" href=\"data:,\">"
        ;; Relative links in an answer, `artifacts/card.html`, resolve
        ;; against the chat's page: the `:ui/url` alias of the page
