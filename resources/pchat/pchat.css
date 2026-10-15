@@ -1286,6 +1286,9 @@ html.theme-dark {
   color: var(--rchat-muted);
 }
 
+/* What the person can edit stands out like the composer's box: white
+   on the page's warm grey (the panel surface in the dark theme); the
+   endpoint, which is only copied, stays flat and muted. */
 .pchat .rchat .job input.line,
 .pchat .rchat .job textarea.prompt,
 .pchat .rchat .job select {
@@ -1295,7 +1298,7 @@ html.theme-dark {
   padding: 6px 8px;
   border: 1px solid var(--rchat-line);
   border-radius: 6px;
-  background: var(--rchat-bg);
+  background: var(--rchat-panel);
   font: inherit;
   color: var(--rchat-text);
 }
@@ -1305,6 +1308,10 @@ html.theme-dark {
   min-width: 200px;
   font-size: 12px;
   text-overflow: ellipsis;
+  border-style: dashed;
+  background: transparent;
+  color: var(--rchat-muted);
+  cursor: default;
 }
 
 .pchat .rchat .job textarea.prompt {
