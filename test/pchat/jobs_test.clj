@@ -33,7 +33,7 @@
     (job! chats-dir 1 {"command" "node render.mjs 01" "pid" (dead-pid) "started" (- now 600000)
                        "log" "frame 1\nframe 2\nwork/out/01.mp4: 14 MB." "exit" "0"})
     (job! chats-dir 2 {"command" "sleep 600" "pid" (.pid (java.lang.ProcessHandle/current)) "started" now})
-    (job! chats-dir 3 {"command" "node render.mjs 03" "pid" (dead-pid) "started" (- now 60000)})
+    (job! chats-dir 3 {"command" "node render.mjs 03" "pid" (dead-pid) "started" (- now 30000)})
     (testing "a job whose process lives runs: the machine stays awake"
       (is (jobs/running? chats-dir [id]))
       (is (= [false true false] (map (complement :ended?) (jobs/jobs chats-dir id)))))
@@ -43,7 +43,7 @@
       (let [[[_ one] [_ three]] @told]
         (is (str/includes? one "Background job 1 (bin/background) has ended with exit 0 after 10 min: node render.mjs 01"))
         (is (str/includes? one "work/out/01.mp4: 14 MB."))
-        (is (str/includes? three "without an exit: it was stopped, or the machine restarted after 60 s"))
+        (is (str/includes? three "without an exit: it was stopped, or the machine restarted after 30 s"))
         (is (str/includes? three "It printed nothing.")))
       (jobs/report-ended! chats-dir [id] (fn [id text] (swap! told conj [id text])) now)
       (is (= 2 (count @told)) "not twice"))
