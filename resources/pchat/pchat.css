@@ -792,7 +792,10 @@ html.theme-dark {
   border: 1px solid var(--rchat-line);
   border-radius: 8px;
   background: var(--rchat-bg);
-  color: inherit;
+  /* the text of its own background, not of what it sits on: on a card
+     the agent made dark with light text the button stays readable; a
+     button the agent colours brings its own `color` in `:style` */
+  color: var(--rchat-text);
   font: inherit;
   cursor: pointer;
 }
