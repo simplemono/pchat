@@ -14,8 +14,8 @@
          '[clojure.string :as str])
 
 (def workspace
-  ;; <workspace>/.pchat/bin/tick, also through the `bin` link of a chat
-  (str (fs/parent (fs/parent (fs/parent (fs/real-path *file*))))))
+  ;; <workspace>/bin/tick, also through the `bin` link of a chat
+  (str (fs/parent (fs/parent (fs/real-path *file*)))))
 
 (add-classpath (str (fs/path workspace ".pchat" "lib")))
 (require '[pchat.nrepl :as nrepl])

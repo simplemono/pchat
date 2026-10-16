@@ -23,6 +23,7 @@
   tab's: its URL, `/chat/<id>`, until a click in the sidebar names
   another (`:tabs`)."
   (:require [pchat.env :as env]
+            [babashka.fs :as fs]
             [babashka.nrepl.server :as nrepl-server]
             [clojure.java.io :as io]
             [clojure.string :as str]
@@ -496,8 +497,10 @@
 
 (def wake-config
   "What the machine's alarm runs when it wakes pchat: `bin/tick` of
-  the workspace (see `pchat.wake`)."
-  {:script (str (io/file workspace ".pchat" "bin" "tick"))})
+  the workspace, by the babashka pchat itself runs on (the alarm's
+  exec has no PATH to speak of; see `pchat.wake`)."
+  {:bb (str (or (fs/which "bb") "bb"))
+   :script (str (io/file workspace "bin" "tick"))})
 
 (def jobs
   "The jobs (see `pchat.jobs`): a run is a chat made here, its first

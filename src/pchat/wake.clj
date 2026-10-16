@@ -71,10 +71,10 @@
     (println "[wake]" (str/join " " words))))
 
 (defn- automation!
-  "The automation set to the cron line with the exec of `script`:
+  "The automation set to the cron line with the exec of `bb script`:
   updated when it is there, made otherwise, enabled either way."
-  [name cron timeout-s script]
-  (let [args ["--cron" cron "--exec" "--after" "sleep_if_woken" "--timeout" (str timeout-s) "--" script]
+  [name cron timeout-s {:keys [bb script]}]
+  (let [args ["--cron" cron "--exec" "--after" "sleep_if_woken" "--timeout" (str timeout-s) "--" bb script]
         updated (apply sprite-env! "automation" "update" name args)
         result (if (ok? updated)
                  updated
@@ -88,22 +88,23 @@
 (defn arm!
   "The machine wakes pchat at `at` (milliseconds; now when it is past)
   for runs of up to `minutes`; without an alarm (`nil`: no scheduled
-  job) the wake automation goes. `script` is `bin/tick` on the machine."
-  [{:keys [script]} {:keys [at minutes]}]
+  job) the wake automation goes. `config` names `bin/tick` on the
+  machine (`:script`) and the babashka to run it with (`:bb`)."
+  [config {:keys [at minutes]}]
   (when (available?)
     (if at
       (let [now (System/currentTimeMillis)
             when (max at (next-minute now))]
-        (automation! wake-name (cron-of when) (+ (* 60 (or minutes 30)) margin-s) script))
+        (automation! wake-name (cron-of when) (+ (* 60 (or minutes 30)) margin-s) config))
       (do (sprite-env! "automation" "delete" wake-name)
           true))))
 
 (defn ensure-daily!
   "The daily wake, made when it is missing."
-  [{:keys [script]}]
+  [config]
   (when (available?)
     (or (ok? (sprite-env! "automation" "get" daily-name))
-        (automation! daily-name daily-cron daily-timeout-s script))))
+        (automation! daily-name daily-cron daily-timeout-s config))))
 
 (comment
   (cron-of (System/currentTimeMillis))

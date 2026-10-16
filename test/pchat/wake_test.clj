@@ -37,32 +37,32 @@
         cron (wake/cron-of (* 60000 (quot at 60000)))]
     (binding [wake/*sprite-env* script]
       (testing "the first alarm is made (the update of what is not there fails), then enabled"
-        (is (true? (wake/arm! {:script "/home/sprite/pchat/workspace/.pchat/bin/tick"} {:at at :minutes 30})))
-        (is (= [(str "automation update pchat-wake --cron " cron " --exec --after sleep_if_woken --timeout 2100 -- /home/sprite/pchat/workspace/.pchat/bin/tick")
-                (str "automation create pchat-wake --cron " cron " --exec --after sleep_if_woken --timeout 2100 -- /home/sprite/pchat/workspace/.pchat/bin/tick")
+        (is (true? (wake/arm! {:bb "/home/sprite/.local/bin/bb" :script "/home/sprite/pchat/workspace/bin/tick"} {:at at :minutes 30})))
+        (is (= [(str "automation update pchat-wake --cron " cron " --exec --after sleep_if_woken --timeout 2100 -- /home/sprite/.local/bin/bb /home/sprite/pchat/workspace/bin/tick")
+                (str "automation create pchat-wake --cron " cron " --exec --after sleep_if_woken --timeout 2100 -- /home/sprite/.local/bin/bb /home/sprite/pchat/workspace/bin/tick")
                 "automation resume pchat-wake"]
                (calls log))))
       (testing "the next alarm is an update"
-        (wake/arm! {:script "/t"} {:at (+ at 60000) :minutes 5})
-        (is (= (str "automation update pchat-wake --cron " (wake/cron-of (* 60000 (quot (+ at 60000) 60000))) " --exec --after sleep_if_woken --timeout 600 -- /t")
+        (wake/arm! {:bb "bb" :script "/t"} {:at (+ at 60000) :minutes 5})
+        (is (= (str "automation update pchat-wake --cron " (wake/cron-of (* 60000 (quot (+ at 60000) 60000))) " --exec --after sleep_if_woken --timeout 600 -- bb /t")
                (nth (calls log) 3)))
         (is (= "automation resume pchat-wake" (nth (calls log) 4))))
       (testing "an alarm in the past is set for the next minute"
-        (wake/arm! {:script "/t"} {:at 0 :minutes 1})
+        (wake/arm! {:bb "bb" :script "/t"} {:at 0 :minutes 1})
         (is (str/includes? (nth (calls log) 5) (wake/cron-of (wake/next-minute (System/currentTimeMillis))))))
       (testing "no scheduled job: the alarm goes"
-        (wake/arm! {:script "/t"} nil)
+        (wake/arm! {:bb "bb" :script "/t"} nil)
         (is (= "automation delete pchat-wake" (last (calls log)))))
       (testing "the daily wake is made once"
-        (is (true? (wake/ensure-daily! {:script "/t"})))
-        (is (= (str "automation create pchat-daily --cron 17 3 * * * --exec --after sleep_if_woken --timeout 600 -- /t")
+        (is (true? (wake/ensure-daily! {:bb "bb" :script "/t"})))
+        (is (= (str "automation create pchat-daily --cron 17 3 * * * --exec --after sleep_if_woken --timeout 600 -- bb /t")
                (nth (calls log) (- (count (calls log)) 2))))
         (let [n (count (calls log))]
-          (wake/ensure-daily! {:script "/t"})
+          (wake/ensure-daily! {:bb "bb" :script "/t"})
           (is (= (inc n) (count (calls log))) "only the look"))))))
 
 (deftest without-sprite-env-test
   (binding [wake/*sprite-env* "no-such-command-anywhere"]
     (is (false? (boolean (wake/available?))))
-    (is (nil? (wake/arm! {:script "/t"} {:at 1 :minutes 1})))
-    (is (nil? (wake/ensure-daily! {:script "/t"})))))
+    (is (nil? (wake/arm! {:bb "bb" :script "/t"} {:at 1 :minutes 1})))
+    (is (nil? (wake/ensure-daily! {:bb "bb" :script "/t"})))))
