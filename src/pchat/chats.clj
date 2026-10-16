@@ -17,8 +17,10 @@
   `/chat/<id>`. Needs nothing beyond babashka, so that the scripts can
   load it from `.pchat/lib`."
   (:require [babashka.fs :as fs]
+            [cheshire.core :as json]
             [clojure.edn :as edn]
-            [clojure.java.io :as io]))
+            [clojure.java.io :as io]
+            [clojure.string :as str]))
 
 (defn new-id
   "A UUID of version 7: the time in milliseconds first, random bits
@@ -161,6 +163,27 @@
           (spit file (pr-str value)))
       (io/delete-file file true))
     value))
+
+(defn write-session!
+  "pi's session file `file` as the session of the chat `id`: written
+  into the chat's `.session/` as `<timestamp>_<id>.jsonl`, the way pi
+  names it, with the id and the chat's folder as cwd in its header,
+  the rest as it is. For a chat made from another one: a job's
+  conversation (`pchat.jobs`), an import (`pchat.import`). Answers the
+  file written, nil when `file` is no session file of pi (not named
+  like one, or without the header)."
+  [chats-dir id file]
+  (let [file (io/file file)
+        name (.getName file)
+        [header & lines] (str/split-lines (slurp file))
+        parsed (try (json/parse-string header true) (catch Exception _ nil))]
+    (when (and (re-find #"_[0-9a-f-]{36}\.jsonl$" name)
+               (= "session" (:type parsed)))
+      (let [target (io/file (session-dir chats-dir id) (str (subs name 0 (- (count name) 43)) "_" id ".jsonl"))
+            header (json/generate-string (assoc parsed :id id :cwd (str (dir chats-dir id))))]
+        (io/make-parents target)
+        (spit target (str (str/join "\n" (cons header lines)) "\n"))
+        target))))
 
 (defn delete!
   "The folder of the chat, gone with everything in it; the links are

@@ -113,7 +113,20 @@ a job conversation's `template`; no link is followed), `tmp/`, and
 `.shares.edn`, whose ids resolve on this server alone. The export is
 for yourself: an agent may have written a key or a password into a
 file during a run, so an export meant for someone else deserves a look
-inside first. There is no import yet.
+inside first.
+
+"Import a zip" under the sidebar's New chat takes such a zip and makes
+a new chat of it (`pchat.import`): the folder from the zip's entries
+with their modification times, the history under the new id (pi's
+session file renamed, its header rewritten), the name and the task
+from `.chat.edn`; a job's run or conversation becomes a plain chat.
+Not taken: an entry whose path would leave the folder, and at the top
+`tmp/`, `.shares.edn` and the names of the links, which the folder
+gets fresh. The zip goes up in pieces like a clip does
+(`pchat.pieces`), so a big export is fine; the chat opens when it is
+in. An export of another pchat works the same: the ids inside are of
+no concern, the chat gets one of this machine. A zip that holds no
+chat is refused.
 
 The id of a chat is a UUID version 7 (`pchat.chats/new-id`, the time
 first, so the folders sort by age): the name of its folder, the id of

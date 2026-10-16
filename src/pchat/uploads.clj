@@ -8,14 +8,13 @@
 
   POST /chat/<id>/upload takes both into the chat's `uploads/` folder:
   an image content-addressed, the way rchat stores it, a clip written
-  to disk as it comes. The browser sends a large file in pieces,
-  `?id=<hex>&offset=<n>&total=<n>` on each, appended to a hidden part
-  file and renamed when the last piece is in; http-kit holds a whole
-  request body in memory, the pieces keep that small. A clip in one
-  request (no `id`) is named by the hash of its bytes. GET
+  to disk as it comes. The browser sends a large file in pieces
+  (`pchat.pieces`), `?id=<hex>&offset=<n>&total=<n>` on each. A clip in
+  one request (no `id`) is named by the hash of its bytes. GET
   /chat/<id>/uploads/* serves the files, with ranges for the players."
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
+            [pchat.pieces :as pieces]
             [rchat.upload :as upload]
             [rframes.http :as http]
             [rframes.transit :as transit]))
@@ -61,21 +60,6 @@
           (str/trim)
           (str/lower-case)))
 
-(defn- query-params
-  [request]
-  (into {}
-        (keep (fn [pair]
-                (let [[k v] (str/split pair #"=" 2)]
-                  (when (seq k)
-                    [k (or v "")]))))
-        (str/split (str (:query-string request)) #"&")))
-
-(defn- body
-  "The body of the request as a stream, an empty one when it has none."
-  [w]
-  (or (:body (:ring/request w))
-      (java.io.ByteArrayInputStream. (byte-array 0))))
-
 (defn- respond
   [w status value]
   (assoc w
@@ -97,22 +81,6 @@
   [^bytes bytes]
   (apply str (map #(format "%02x" (bit-and % 0xff)) (take 16 bytes))))
 
-(defn- copy-counted!
-  "Copies `in` to the end of `file`, at most `limit` bytes in all, and
-  returns the bytes it holds then, or nil when it would grow past
-  `limit`. `digest` sees every byte when given."
-  [in file limit digest]
-  (let [buffer (byte-array 65536)]
-    (with-open [out (java.io.FileOutputStream. (io/file file) true)]
-      (loop [length (.length (io/file file))]
-        (let [n (.read in buffer)]
-          (cond
-            (neg? n) length
-            (< limit (+ length n)) nil
-            :else (do (.write out buffer 0 n)
-                      (some-> digest (.update buffer 0 n))
-                      (recur (+ length n)))))))))
-
 (defn- whole!
   "A clip in one request, named by the hash of its bytes."
   [{:keys [dir max-bytes url-prefix]} w extension]
@@ -120,7 +88,7 @@
         part (io/file dir (str "." (random-uuid) ".part"))]
     (io/make-parents part)
     (.delete part)
-    (let [length (copy-counted! (body w) part max-bytes digest)]
+    (let [length (pieces/copy-counted! (pieces/body w) part max-bytes digest)]
       (cond
         (nil? length)
         (do (.delete part)
@@ -138,48 +106,23 @@
           (respond w 200 (stored url-prefix file)))))))
 
 (defn- piece!
-  "One piece of a clip sent in pieces: it must start where the part file
-  ends; the last one completes the file."
-  [{:keys [dir max-bytes url-prefix]} w extension {:strs [id offset total]}]
-  (let [offset (parse-long (str offset))
-        total (parse-long (str total))
-        part (io/file dir (str "." id "." extension ".part"))
-        file (io/file dir (str id "." extension))]
+  "One piece of a clip sent in pieces (`pchat.pieces/receive!`): the
+  last one completes the file, which the answer names."
+  [{:keys [dir max-bytes url-prefix]} w extension]
+  (let [{:keys [status file] :as result} (pieces/receive! {:dir dir
+                                                           :extension extension
+                                                           :max-bytes max-bytes}
+                                                          w)]
     (cond
-      (not (and (re-matches #"[0-9a-f]{16,64}" (str id)) offset total (pos? total)))
-      (respond w 400 {:error :bad-piece})
-
-      (< max-bytes total)
-      (respond w 413 {:error :too-large})
-
-      (not= offset (if (zero? offset)
-                     0
-                     (when (.isFile part) (.length part))))
-      (respond w 409 {:error :out-of-order
-                      :received (if (.isFile part) (.length part) 0)})
-
-      :else
-      (do (io/make-parents part)
-          (when (zero? offset)
-            (.delete part))
-          (let [length (copy-counted! (body w) part total nil)]
-            (cond
-              (nil? length)
-              (do (.delete part)
-                  (respond w 400 {:error :longer-than-total}))
-
-              (= length total)
-              (do (.renameTo part file)
-                  (respond w 200 (stored url-prefix file)))
-
-              :else
-              (respond w 200 {:received length})))))))
+      status (respond w status (dissoc result :status))
+      file (respond w 200 (stored url-prefix file))
+      :else (respond w 200 result))))
 
 (defn- image!
   "An image, stored the way rchat does it, content-addressed; at most
   rchat's size, the browser scales it before."
   [{:keys [dir url-prefix]} w type]
-  (let [bytes (.readAllBytes (body w))]
+  (let [bytes (.readAllBytes (pieces/body w))]
     (cond
       (zero? (count bytes))
       (respond w 400 {:error :empty})
@@ -199,8 +142,7 @@
   [opts w]
   (let [request (:ring/request w)
         type (content-type request)
-        opts (merge {:max-bytes max-bytes} opts)
-        params (query-params request)]
+        opts (merge {:max-bytes max-bytes} opts)]
     (cond
       (upload/extensions type)
       (image! opts w type)
@@ -208,8 +150,8 @@
       (not (media type))
       (respond w 415 {:error :not-media})
 
-      (get params "id")
-      (piece! opts w (first (media type)) params)
+      (get (pieces/query-params request) "id")
+      (piece! opts w (first (media type)))
 
       :else
       (whole! opts w (first (media type))))))

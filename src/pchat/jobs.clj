@@ -213,18 +213,12 @@
   "The newest session file of the chat folder `from` as the
   conversation's own: the same history under the conversation's id, so
   that the agent there knows what the person wanted."
-  [from conversation-dir cid]
+  [from chats-dir cid]
   (when-let [file (->> (or (.listFiles (io/file from ".session")) [])
                        (filter #(re-find #"_[0-9a-f-]{36}\.jsonl$" (.getName %)))
                        (sort-by #(.getName %))
                        (last))]
-    (let [[header & lines] (str/split-lines (slurp file))
-          parsed (try (json/parse-string header true) (catch Exception _ nil))]
-      (when (= "session" (:type parsed))
-        (let [header (json/generate-string (assoc parsed :id cid :cwd (str conversation-dir)))
-              prefix (subs (.getName file) 0 (- (count (.getName file)) 43))]
-          (spit (io/file conversation-dir ".session" (str prefix "_" cid ".jsonl"))
-                (str (str/join "\n" (cons header lines)) "\n")))))))
+    (chats/write-session! chats-dir cid file)))
 
 (defn conversation!
   "The job's conversation: a chat of its own under chats/, named like
@@ -239,7 +233,7 @@
     (fs/create-sym-link (io/file dir "template") (str "../../jobs/" id "/template"))
     (chats/update-meta! chats-dir cid #(assoc % :name name :job id))
     (when from
-      (fork-session! from dir cid))
+      (fork-session! from chats-dir cid))
     cid))
 
 (defn create!
