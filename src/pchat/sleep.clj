@@ -13,7 +13,8 @@
   `sprite-env` (a laptop) nothing happens here; `PCHAT_SLEEP=off`
   switches it off anywhere, `PCHAT_SLEEP_AFTER_MIN` is the idle time,
   ten minutes by default. A machine whose auto idle is on sleeps by
-  itself long before, so this is nothing to it."
+  itself long before, so this is nothing to it; pchat bets on Sprites
+  2.0 with the auto idle off and holds a machine awake no other way."
   (:require [babashka.fs :as fs]
             [babashka.process :as process]
             [clojure.string :as str]))

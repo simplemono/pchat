@@ -2,8 +2,8 @@
   "Tasks that outlast the agent's turn: `bin/background <command>` starts
   one detached from the agent, in `.background/<n>/` of the chat's folder
   (`command`, `pid`, `started`, `log`, and `exit` once it has ended). A
-  task that runs is work, like a chat that works: the machine stays awake
-  (`pchat.awake`) and no update ends the process. A task that has ended
+  task that runs is work, like a chat that works: the machine is not
+  put to sleep (`pchat.sleep`) and no update ends the process. A task that has ended
   is told to the chat's agent once, with its exit, how long it took and
   the end of its output, so that it goes on with what it started the task
   for; `reported` in its folder marks it told. A task whose process is

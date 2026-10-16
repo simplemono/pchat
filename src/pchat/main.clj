@@ -31,7 +31,6 @@
             [clojure.string :as str]
             [org.httpkit.server :as server]
             [pchat.artifacts :as artifacts]
-            [pchat.awake :as awake]
             [pchat.sleep :as sleep]
             [pchat.chat :as chat]
             [pchat.chats :as chats]
@@ -1542,10 +1541,8 @@
   (setup/watch! setup)
   (update/watch! updater)
   (jobs/watch! jobs)
-  ;; On a Sprite: no pause while a chat works or a video renders.
-  (awake/watch! #(not (idle?)))
-  ;; On a Sprite whose auto idle is off: to sleep once nothing has
-  ;; been going on for a while.
+  ;; On a Sprite (its auto idle off): to sleep once nothing has been
+  ;; going on for a while.
   (sleep/watch! busy?)
   (.addShutdownHook (Runtime/getRuntime) (Thread. #(do (projects/stop-all! projects)
                                                        (render/stop-all! renders))))

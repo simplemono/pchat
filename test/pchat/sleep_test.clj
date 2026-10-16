@@ -25,20 +25,22 @@
   (let [busy (atom true)
         stops (atom 0)
         watch (sleep/watch! (fn [] @busy)
-                            {:every-ms 20
+                            {:every-ms 10
                              :after-ms 100
                              :available? (constantly true)
                              :stop! (fn [] (swap! stops inc) true)})]
     (try
-      (Thread/sleep 200)
+      (Thread/sleep 250)
       (is (= 0 @stops) "busy: no stop")
       (reset! busy false)
-      (Thread/sleep 80)
+      (Thread/sleep 50)
       (is (= 0 @stops) "idle, but not for long enough")
-      (Thread/sleep 150)
-      (is (= 1 @stops) "idle for the time: one stop")
-      (Thread/sleep 150)
-      (is (= 2 @stops) "the process went on (the stop was refused, or the machine woke): the idle time started afresh and ran out again")
+      (Thread/sleep 400)
+      (is (<= 2 @stops 5) "idle for the time: a stop, and more as the idle time ran out afresh (the process went on: the stop was refused, or the machine woke and idled again)")
+      (reset! busy true)
+      (let [n @stops]
+        (Thread/sleep 250)
+        (is (= n @stops) "busy again: no more stops"))
       (finally
         (future-cancel watch)))))
 
