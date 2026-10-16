@@ -35,3 +35,22 @@
       (is (= w (projects/handler handle "c" w))))
     (testing "no chats, no projects, nothing to sync"
       (is (nil? (projects/sync! handle))))))
+
+(deftest media-of-a-project-test
+  (let [chats (str (java.nio.file.Files/createTempDirectory
+                    "pchat-projects"
+                    (make-array java.nio.file.attribute.FileAttribute 0)))
+        id "0199dd7e-1f1a-7a2b-8b3c-4d5e6f708192"
+        dir (io/file chats id "artifacts" "short")
+        db (atom {:chats {id {:projects {"short" {:ready-at 1}}}}})
+        handle (projects/handle {:db db :chats-dir chats})
+        w (fn [path] {:ring/route-params {:* path} :ring/request {}})]
+    (.mkdirs dir)
+    (spit (io/file dir "highlight.mp4") "video")
+    (swap! (:procs handle) assoc [id "short"] {:port 1})
+    (testing "a clip in a running project's folder is left to the files route, not proxied"
+      (is (= (w "short/highlight.mp4") (projects/handler handle id (w "short/highlight.mp4")))))
+    (testing "its page, and a hidden file, go to the process"
+      (is (contains? (projects/handler handle id (w "short/")) :ring/response))
+      (is (contains? (projects/handler handle id (w "short/.hidden/x.mp4")) :ring/response)))))
+

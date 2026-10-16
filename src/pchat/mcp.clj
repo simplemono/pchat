@@ -124,6 +124,23 @@
   [{:keys [state-file]} state]
   (write-atomically! state-file (pr-str state)))
 
+(defn composio-direct!
+  "A Composio connection (a Storrito agent's own) is declared to the
+  model from the start, `direct`: it has four tools. Searched for later
+  (`deferred`), each load changes the tools at the head of the request,
+  and the model reads the whole conversation again without its cache: a
+  quarter of a minute and tens of cents a step in a long chat. True when
+  the file changed."
+  [handle]
+  (let [composio (set (composio-connections handle))
+        servers (servers handle)
+        names (for [[name entry] servers
+                    :when (and (composio name) (not= "direct" (get entry "exposure")))]
+                name)]
+    (when (seq names)
+      (write-servers! handle (reduce #(assoc-in %1 [%2 "exposure"] "direct") servers names))
+      true)))
+
 ;;; The value on the page
 
 (defn- masked-address
@@ -418,6 +435,7 @@
                        {:error error :tested (System/currentTimeMillis)}
                        {:tools (vec (map :name tools)) :tested (System/currentTimeMillis)})]
           (write-state! handle (assoc (read-state handle) name result))
+          (composio-direct! handle)
           (load! handle)
           (swap! db update-in [:connections name] #(some-> % (dissoc :testing?)))
           (if error

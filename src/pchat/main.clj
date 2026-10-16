@@ -28,11 +28,13 @@
             [clojure.string :as str]
             [org.httpkit.server :as server]
             [pchat.artifacts :as artifacts]
+            [pchat.awake :as awake]
             [pchat.chat :as chat]
             [pchat.chats :as chats]
             [pchat.jobs :as jobs]
             [pchat.i18n :as i18n]
             [pchat.schedule :as schedule]
+            [pchat.background :as background]
             [pchat.looks :as looks]
             [pchat.mcp :as mcp]
             [pchat.migrate :as migrate]
@@ -128,10 +130,12 @@
                   :on-finish (fn [id _name] (artifacts/refollow! artifacts id))}))
 
 (defn- idle?
-  "No chat works and no video renders: the moment the process may end."
+  "No chat works, no video renders and no task of `bin/background` runs:
+  the moment the process may end."
   []
   (and (every? #(= :idle (:status %)) (vals (:chats @db)))
-       (not (render/any-running? renders))))
+       (not (render/any-running? renders))
+       (not (background/running? chats-dir (keys (:chats @db))))))
 
 (def updater
   (update/handle {:db db
@@ -182,7 +186,8 @@
    "bin/ask"
    "bin/mcp"
    "bin/migrate-chats"
-   "bin/job"])
+   "bin/job"
+   "bin/background"])
 
 (def lib-files
   "Namespaces of pchat the scripts load from .pchat/lib: `bin/mcp` edits
@@ -560,6 +565,20 @@
       :else
       (do (send! id message images)
           (command/accepted w)))))
+
+(defn- watch-background!
+  "Every two seconds: a task of `bin/background` that has ended is told to
+  its chat's agent, which goes on with what it started it for."
+  []
+  (future
+    (loop []
+      (Thread/sleep 2000)
+      (try
+        (background/report-ended! chats-dir (keys (:chats @db)) (fn [id text] (send! id text [])) (now))
+        (catch Exception e
+          (binding [*out* *err*]
+            (println "[background]" (str e)))))
+      (recur))))
 
 (defn- abort-command
   [w]
@@ -1454,15 +1473,21 @@
   (swap! db assoc :skills (skills/load-all (skills/checkout)))
   (load-chats!)
   (jobs/load! jobs)
+  ;; a Composio connection the Storrito agent brings, declared deferred:
+  ;; direct before the first chat starts
+  (mcp/composio-direct! connections)
   (mcp/load! connections)
   (migrate/check! migration)
   (poll-artifacts!)
   (sync-projects!)
   (reap-idle-pis!)
+  (watch-background!)
   (watch-connections!)
   (setup/watch! setup)
   (update/watch! updater)
   (jobs/watch! jobs)
+  ;; On a Sprite: no pause while a chat works or a video renders.
+  (awake/watch! #(not (idle?)))
   (.addShutdownHook (Runtime/getRuntime) (Thread. #(do (projects/stop-all! projects)
                                                        (render/stop-all! renders))))
   (sse/watch! db)

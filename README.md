@@ -156,7 +156,15 @@ with the scrubber. A second template, `bin/new <name> hyperframes`, is a
 [HyperFrames](https://github.com/heygen-com/hyperframes) composition:
 HTML with GSAP in `composition/index.html`, shown in the HyperFrames
 player, rendered by `hyperframes render`, audio declared on `<audio>`
-elements with `data-start`, `data-duration`, `data-volume`.
+elements with `data-start`, `data-duration`, `data-volume`. Like the
+motion design, its page is a small rframes app with controls beside the
+player: one per variable the composition declares
+(`data-composition-variables`: text, number, colour, yes/no, a choice).
+The values go into the project's `variables.json` and reach the
+composition as `window.__hfVariables`, the way `hyperframes render
+--variables-file` gives them, so the preview and the video agree, and a
+skill makes its composition adjustable without pchat knowing it. A
+project with other controls defines them in `src/artifact/controls.clj`.
 
 Needed on the machine: a Chrome (`google-chrome` or `chromium` on the
 PATH, or `CHROME`), ffmpeg, and for the HyperFrames template `npm
