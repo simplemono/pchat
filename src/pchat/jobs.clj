@@ -25,13 +25,19 @@
             :state :running|:done|:failed|:stopped :reason
             :started ms :ended ms :cost usd}
 
-  Triggers: a POST to `/jobs/<id>/run` with the job's token: a
-  service, the Run now button, or the owner of the machine firing the
-  job's schedule. pchat keeps no clock itself: the machines it runs on
-  sleep between requests, so the schedule, a cron line in the job's
-  time zone, is registered with the owner's service, which calls the
-  endpoint at the time. One run at a time per job: a trigger during a
-  run waits, one at most. Three failed runs in a row pause the job. Needs nothing beyond babashka, so that `bin/job` loads it from
+  Triggers: the schedule, a cron line in the job's time zone, fired by
+  pchat's own clock (`tick!`, once a minute while pchat runs); a POST
+  to `/jobs/<id>/run` with the job's token from a service; the Run now
+  button. The machines pchat runs on sleep between requests, so the
+  clock cannot tick there by itself: the tick tells the machine when
+  to wake it next (`:rearm!` of the handle, `pchat.wake` on a sprite),
+  the earliest due minute of all jobs, and a wake runs the tick. A
+  minute fires once however often pchat wakes (`:fired` of the job is
+  the last minute fired or skipped); a minute more than an hour old is
+  skipped and noted (`:skipped`), so a machine asleep for a day does
+  not run a day of jobs. One run at a time per job: a trigger during a
+  run waits, one at most. Three failed runs in a row pause the job.
+  Needs nothing beyond babashka, so that `bin/job` loads it from
   `.pchat/lib`.
 
   The db keys this namespace owns: `:jobs {id job}` and
@@ -52,6 +58,11 @@
 
 (def max-payload-chars
   20000)
+
+(def catch-up-ms
+  "How long a scheduled minute that passed while pchat was not running
+  is still fired."
+  (* 60 60 1000))
 
 ;;; Files
 
@@ -135,6 +146,16 @@
   [workspace id f]
   (when-let [job (read-job workspace id)]
     (write-job! workspace (f job))))
+
+(defn with-schedule
+  "The job with the schedule (a cron line or nil) in the zone (an IANA
+  name, the job's own when nil), counting from `now`: what came due
+  before is not fired."
+  [job cron zone now]
+  (assoc job
+         :schedule cron
+         :tz (or zone (:tz job) "UTC")
+         :fired now))
 
 (defn prompt
   "`JOB.md`, empty when there is none yet."
@@ -389,13 +410,17 @@
   [{:keys [db]} id]
   (get-in @db [:jobs id]))
 
+(declare rearm!)
+
 (defn write!
-  "The job written and in the db."
-  [{:keys [db workspace mtimes]} job]
+  "The job written and in the db; the machine's alarm set again, the
+  schedule may have changed."
+  [{:keys [db workspace mtimes] :as handle} job]
   (write-job! workspace (dissoc job :prompt :next))
   (swap! mtimes dissoc (:id job))
   (let [job (with-next job (now-utc))]
     (swap! db assoc-in [:jobs (:id job)] job)
+    (rearm! handle)
     job))
 
 (defn ensure-conversation!
@@ -547,6 +572,63 @@
                           (finish! handle chat-id :stopped :cost))
           nil)))))
 
+;;; The clock
+
+(defn due-at
+  "The milliseconds of the next scheduled minute the job has not fired
+  yet, counted from the last minute fired or skipped (its creation
+  without one); nil for a job without a schedule or a paused one."
+  [{:keys [state schedule fired created] :as job}]
+  (when (and (= :active state) schedule)
+    (let [from (-> (java.time.Instant/ofEpochMilli (or fired created 0))
+                   (.truncatedTo java.time.temporal.ChronoUnit/MINUTES))]
+      (some-> (next-run schedule (.atZone from (zone job)))
+              (.toInstant)
+              (.toEpochMilli)))))
+
+(defn active-runs
+  [{:keys [db]}]
+  (filter #(= :running (get-in % [:run :state])) (vals (:chats @db))))
+
+(defn next-alarm
+  "When the machine has to be awake next: the earliest due minute of
+  the jobs (one in the past means now) with the longest run cap in
+  minutes, `{:at :minutes}`; nil without a scheduled job."
+  [{:keys [db] :as handle}]
+  (let [jobs (vals (:jobs @db))
+        dues (keep due-at jobs)]
+    (when (seq dues)
+      {:at (apply min dues)
+       :minutes (apply max (:minutes default-caps) (keep #(get-in % [:caps :minutes]) jobs))})))
+
+(defn rearm!
+  "Tells the machine when to wake pchat next, through `:rearm!` of the
+  handle when it has one."
+  [{:keys [rearm!] :as handle}]
+  (when rearm!
+    (rearm! (next-alarm handle))))
+
+(defn fire-due!
+  "Every job whose scheduled minute has come gets a run, one per job
+  and tick (the next minute is the next tick's); a minute more than an
+  hour old is skipped and noted on the job. Answers the ids started."
+  [handle now]
+  (doall
+    (for [job (vals (:jobs @(:db handle)))
+          :let [at (due-at job)]
+          :when (and at (<= at now))
+          :let [[job at] (if (< catch-up-ms (- now at))
+                           ;; asleep for long: nothing before the last
+                           ;; hour, once
+                           (let [until (* 60000 (quot (- now catch-up-ms) 60000))
+                                 job (write! handle (assoc job :fired until :skipped {:from at :until until}))]
+                             [job (due-at job)])
+                           [job at])]
+          :when (and at (<= at now))]
+      (do (write! handle (assoc job :fired at))
+          (start! handle (:id job) {:kind :schedule :at at :cron (:schedule job) :tz (:tz job)})
+          (:id job)))))
+
 ;;; The housekeeping
 
 (defn- over-time?
@@ -560,8 +642,10 @@
   (* 2 60 1000))
 
 (defn tick!
-  "Once a minute: the jobs read again, the runs past their time cap
-  stopped, the runs whose agent is gone failed."
+  "Once a minute, and whenever the machine wakes pchat: the jobs read
+  again, the runs past their time cap stopped, the runs whose agent is
+  gone failed, the due schedules fired, the machine's alarm set to the
+  next due minute."
   [{:keys [db abort! alive?] :as handle}]
   (load! handle)
   (let [now (System/currentTimeMillis)]
@@ -571,10 +655,12 @@
         (over-time? handle run now) (do (abort! id)
                                         (finish! handle id :stopped :time))
         (and (< interrupted-after-ms (- now (:started run 0)))
-             (not (alive? id))) (finish! handle id :failed :interrupted)))))
+             (not (alive? id))) (finish! handle id :failed :interrupted)))
+    (fire-due! handle now)
+    (rearm! handle)))
 
 (defn watch!
-  "The housekeeping, in the background, right after every full minute."
+  "The clock, in the background, right after every full minute."
   [handle]
   (future
     (loop []

@@ -97,7 +97,7 @@
  :job/queued "Ein Lauf läuft gerade; der nächste startet, wenn er fertig ist."
  :job/paused-note "Pausiert nach drei fehlgeschlagenen Läufen in Folge; Fortsetzen startet den Zeitplan wieder."
  :job/caps [:fn/str "Jeder Lauf darf ${{:cost}} ausgeben und {{:minutes}} Minuten dauern."]
- :job/external-clock "Diese Maschine hält die Zeit nicht selbst: der Zeitplan läuft, wenn ihr Betreiber den Endpunkt zur Zeit aufruft."
+ :job/external-clock "pchat hält die Zeit: auf einem Sprite stellt es den Wecker der Maschine auf die nächste fällige Minute."
  :job/copy "Kopieren"
  :job/view-job "Job"
  :job/first-message [:fn/str "Mach aus diesem Chat den Job \"{{:name}}\": schreib, was er jedes Mal tut, aus unserem bisherigen Gespräch in seinen Prompt, in meiner Sprache; dann sag mir in ein paar Zeilen, was drinsteht, und frag mich, wann er laufen soll. Meine Zeitzone ist {{:tz}}."]

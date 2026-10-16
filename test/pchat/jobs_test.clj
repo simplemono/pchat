@@ -270,15 +270,52 @@
 
 (deftest schedule-test
   (let [workspace (temp-dir)
-        {:keys [db] :as handle} (handle! workspace)
+        alarms (atom [])
+        {:keys [db sent] :as handle} (handle! workspace {:rearm! (fn [alarm] (swap! alarms conj alarm))})
         from (chat-folder! workspace (chats/new-id))
-        {:keys [id]} (jobs/create! workspace {:name "Nine" :from (str from)})]
+        {:keys [id]} (jobs/create! workspace {:name "Nine" :from (str from)})
+        now (System/currentTimeMillis)
+        minute (* 60000 (quot now 60000))]
+    (jobs/set-prompt! workspace id "Go.")
     (jobs/load! handle)
-    (jobs/write! handle (assoc (jobs/job handle id) :schedule "0 9 * * 1-5"))
-    (is (number? (get-in @db [:jobs id :next])) "the next run as milliseconds")
-    (testing "pchat keeps no clock: a tick starts nothing"
+    (testing "a schedule counts from when it was set: nothing before is due, the alarm is its next minute"
+      (jobs/write! handle (jobs/with-schedule (jobs/job handle id) "* * * * *" nil now))
+      (is (number? (get-in @db [:jobs id :next])) "the next run as milliseconds")
+      (is (= (+ minute 60000) (jobs/due-at (jobs/job handle id))))
+      (is (= {:at (+ minute 60000) :minutes 30} (jobs/next-alarm handle)))
+      (is (= {:at (+ minute 60000) :minutes 30} (last @alarms)) "the write set the alarm")
       (jobs/tick! handle)
-      (is (= [] (jobs/runs-of handle id))))))
+      (is (= [] (jobs/runs-of handle id)) "not due yet"))
+    (testing "a due minute fires once, however often the clock ticks"
+      (jobs/write! handle (assoc (jobs/job handle id) :fired (- minute 120000)))
+      (is (= (- minute 60000) (jobs/due-at (jobs/job handle id))))
+      (jobs/tick! handle)
+      (let [[run] (jobs/runs-of handle id)]
+        (is (= 1 (count (jobs/runs-of handle id))))
+        (is (= :schedule (get-in run [:run :trigger :kind])))
+        (is (= (- minute 60000) (get-in run [:run :trigger :at])))
+        (is (= "* * * * *" (get-in run [:run :trigger :cron])))
+        (is (str/includes? (second (first @sent)) "came due at"))
+        (is (= (- minute 60000) (:fired (jobs/job handle id))) "the minute is fired"))
+      (jobs/tick! handle)
+      (is (= 1 (count (jobs/runs-of handle id))) "the same minute is not fired again; the next one waits in the queue while this run goes")
+      (is (= (+ minute 60000) (:at (jobs/next-alarm handle))) "the alarm moved on"))
+    (testing "a job that slept for long skips what is more than an hour old and notes it"
+      (let [{:keys [id]} (jobs/create! workspace {:name "Late" :from (str from)})]
+        (jobs/load! handle)
+        (jobs/write! handle (jobs/with-schedule (jobs/job handle id) "0 * * * *" "UTC" (- now (* 5 60 60 1000))))
+        (jobs/tick! handle)
+        (let [job (jobs/job handle id)]
+          (is (= 1 (count (jobs/runs-of handle id))) "the one within the hour ran")
+          (is (= (- minute (* 60 60 1000)) (get-in job [:skipped :until])) "the hour before now, to the minute")
+          (is (< (get-in job [:skipped :from]) (get-in job [:skipped :until])))
+          (is (<= (get-in job [:skipped :until]) (:fired job) now) "then the one within the hour"))))
+    (testing "a paused job and one without a schedule have no due minute; without any, no alarm"
+      (doseq [{:keys [id]} (vals (:jobs @db))]
+        (jobs/write! handle (assoc (jobs/job handle id) :state :paused)))
+      (is (every? nil? (map jobs/due-at (vals (:jobs @db)))))
+      (is (nil? (jobs/next-alarm handle)))
+      (is (nil? (last @alarms)) "the write told the machine: no alarm"))))
 
 (deftest interrupted-run-test
   (let [workspace (temp-dir)

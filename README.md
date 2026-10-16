@@ -288,13 +288,17 @@ in a folder or a message in a channel; the body of the call reaches the
 agent as text (a megabyte read, twenty thousand characters kept); the
 answer is `{"run": "<chat-id>"}` or `{"queued": true}`.
 
-pchat keeps no clock: the machines it runs on sleep between requests.
-The owner of the machine fires the schedule by calling the endpoint
-at the time; `bin/job schedule` tells the agent to register the
-schedule, with its time zone, with the owner's service (it searches
-the connected services for a tool that registers a schedule for a
-URL). A machine that stays awake can do the same with its own cron
-and `curl`. `bin/job
+pchat keeps the time itself: once a minute it fires the schedules
+that came due (a minute more than an hour old is skipped and noted on
+the job, so a machine asleep for a day does not run a day of jobs).
+The machines it runs on sleep between requests, so pchat tells the
+machine when to wake it next, the earliest due minute of all jobs: on
+a Sprite (2.0) that is the sprite's own automation `pchat-wake`, set
+from inside with `sprite-env`, whose action runs `bin/tick`, which
+wakes the sprite, ticks the clock and stays until the runs are done;
+`pchat-daily` wakes it once a day besides, in case an alarm was lost
+(`pchat.wake`; `PCHAT_WAKE=off` switches it off). On a laptop nothing
+of that happens: pchat runs on. `bin/job
 show|list|run|pause|resume|rename|delete` are the rest (`pchat.jobs`,
 `pchat.jobs-view`).
 

@@ -57,12 +57,11 @@
   (str base-url (jobs/endpoint-path job)))
 
 (defn schedule-note
-  "What has to happen for a schedule to fire: pchat keeps no clock."
-  [{:keys [schedule] :as job}]
+  "How a schedule fires: pchat keeps the time; on a sprite it sets the
+  sprite's own alarm to wake for the next minute."
+  [{:keys [schedule]}]
   (when schedule
-    (str "This machine sleeps between requests and does not keep time by itself: the schedule fires when its owner calls the endpoint at the time. "
-         "Register it there: search the connected services for a tool that registers a schedule for a URL (the job id " (:id job)
-         ", the cron line " (pr-str schedule) ", the time zone " (:tz job "UTC") ", the URL " (endpoint job) ", the token " (:token job) "); without that tool, the person has to arrange the call.")))
+    "pchat keeps the time and fires the schedule itself; on a sprite it sets the sprite's own alarm to wake for the next due minute. Nothing to register anywhere."))
 
 (defn next-text
   [{:keys [schedule tz]}]
@@ -123,7 +122,7 @@
   (let [job (job-or-fail id)]
     (cond
       (= "off" cron)
-      (do (jobs/write-job! workspace (assoc job :schedule nil :schedule-text nil))
+      (do (jobs/write-job! workspace (assoc (jobs/with-schedule job nil nil (System/currentTimeMillis)) :schedule-text nil))
           (println (str "No schedule for " id " anymore; the endpoint and Run now remain.")))
 
       (not (jobs/valid-cron? cron))
@@ -133,7 +132,7 @@
       (fail (str "Not a time zone: " (pr-str zone) ". An IANA name like Europe/Berlin or America/New_York."))
 
       :else
-      (let [job (jobs/write-job! workspace (assoc job :schedule cron :schedule-text nil :tz (or zone (:tz job) "UTC")))]
+      (let [job (jobs/write-job! workspace (assoc (jobs/with-schedule job cron zone (System/currentTimeMillis)) :schedule-text nil))]
         (println (str "The schedule of " id " is " (pr-str cron) " in " (:tz job) ", next " (next-text job) "."))
         (println (str "Endpoint: " (endpoint job)))
         (println (schedule-note job))))))

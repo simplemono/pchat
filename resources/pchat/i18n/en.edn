@@ -99,7 +99,7 @@
  :job/queued "A run is going; the next one starts when it is done."
  :job/paused-note "Paused after three failed runs in a row; Resume starts the schedule again."
  :job/caps [:fn/str "Each run may spend ${{:cost}} and take {{:minutes}} minutes."]
- :job/external-clock "This machine does not keep time by itself: the schedule fires when the owner of the machine calls the endpoint at the time."
+ :job/external-clock "pchat keeps the time: on a sprite it sets the machine's own alarm to wake for the next due minute."
  :job/copy "Copy"
  :job/view-job "Job"
  :job/first-message [:fn/str "Make this chat the job \"{{:name}}\": write what it does every time into its prompt, from our conversation so far, in my language; then tell me in a few lines what it says and ask me when it should run. My time zone is {{:tz}}."]

@@ -34,6 +34,7 @@
             [pchat.jobs :as jobs]
             [pchat.i18n :as i18n]
             [pchat.schedule :as schedule]
+            [pchat.wake :as wake]
             [pchat.background :as background]
             [pchat.looks :as looks]
             [pchat.mcp :as mcp]
@@ -187,15 +188,18 @@
    "bin/mcp"
    "bin/migrate-chats"
    "bin/job"
+   "bin/tick"
    "bin/background"])
 
 (def lib-files
   "Namespaces of pchat the scripts load from .pchat/lib: `bin/mcp` edits
   the connections with the same code as the page, `bin/migrate-chats`
-  makes chat folders the way the page does, `bin/job` the jobs."
+  makes chat folders the way the page does, `bin/job` the jobs,
+  `bin/tick` talks to pchat's nREPL."
   ["mcp.clj"
    "chats.clj"
-   "jobs.clj"])
+   "jobs.clj"
+   "nrepl.clj"])
 
 (def retired-files
   "Scripts earlier builds installed that are gone: the kinetic engine is a
@@ -490,17 +494,36 @@
         streaming? (= :working (get-in @db [:chats id :status]))]
     (pi/prompt! p text streaming? images)))
 
+(def wake-config
+  "What the machine's alarm runs when it wakes pchat: `bin/tick` of
+  the workspace (see `pchat.wake`)."
+  {:script (str (io/file workspace ".pchat" "bin" "tick"))})
+
 (def jobs
   "The jobs (see `pchat.jobs`): a run is a chat made here, its first
-  message sent like any other; the schedules are fired from outside,
-  by the owner of the machine calling the endpoints at the time."
+  message sent like any other; the clock ticks here once a minute and
+  tells the machine when to wake pchat next (`pchat.wake`)."
   (jobs/handle {:db db
                 :workspace workspace
                 :chats-dir chats-dir
                 :add-chat! (fn [id] (swap! db assoc-in [:chats id] (new-chat id)))
                 :send! (fn [id text] (send! id text nil))
                 :abort! (fn [id] (when-let [p (get @pis id)] (pi/abort! p)))
-                :alive? (fn [id] (boolean (some-> (get @pis id) pi/alive?)))}))
+                :alive? (fn [id] (boolean (some-> (get @pis id) pi/alive?)))
+                :rearm! (fn [alarm] (wake/arm! wake-config alarm))}))
+
+(defn tick!
+  "The jobs' clock, now: the due schedules fired, the housekeeping, the
+  machine's alarm set to the next due minute. `bin/tick` calls it over
+  the nREPL when the machine wakes. Answers a line about the runs."
+  []
+  (jobs/tick! jobs)
+  (str (count (jobs/active-runs jobs)) " running"))
+
+(defn runs-active
+  "How many runs are going; `bin/tick` waits while there are any."
+  []
+  (count (jobs/active-runs jobs)))
 
 (defn- keep!
   "The message of a chat whose agent is not there yet: kept in the
@@ -995,7 +1018,7 @@
 
       :else
       (let [job (if (and (str/blank? (str (:tz job))) (schedule/valid-zone? (str tz)))
-                  (jobs/write! jobs (assoc job :tz (str tz)))
+                  (jobs/write! jobs (jobs/with-schedule job (:schedule job) (str tz) (now)))
                   job)
             key (System/getenv "OPENROUTER_API_KEY")]
         (swap! db assoc-in [:jobs/proposal id] {:text text :pending true})
@@ -1022,7 +1045,7 @@
     (cond
       (nil? job) (command/rejected w (say w [:i18n :command/no-such-job]))
       (or pending error (nil? cron)) (command/rejected w (say w [:i18n :job/not-understood]))
-      :else (do (jobs/write! jobs (assoc job :schedule cron :schedule-text text))
+      :else (do (jobs/write! jobs (assoc (jobs/with-schedule job cron nil (now)) :schedule-text text))
                 (swap! db update :jobs/proposal dissoc id)
                 (command/accepted w)))))
 
@@ -1036,7 +1059,7 @@
   [w]
   (let [{:keys [id]} (command/command-data w)]
     (if-let [job (jobs/job jobs id)]
-      (do (jobs/write! jobs (assoc job :schedule nil :schedule-text nil))
+      (do (jobs/write! jobs (assoc (jobs/with-schedule job nil nil (now)) :schedule-text nil))
           (swap! db update :jobs/proposal dissoc id)
           (command/accepted w))
       (command/rejected w (say w [:i18n :command/no-such-job])))))
@@ -1050,7 +1073,7 @@
     (cond
       (nil? job) (command/rejected w (say w [:i18n :command/no-such-job]))
       (not (schedule/valid-zone? (str tz))) (command/rejected w (say w [:i18n :command/bad-zone]))
-      :else (do (jobs/write! jobs (assoc job :tz (str tz)))
+      :else (do (jobs/write! jobs (jobs/with-schedule job (:schedule job) (str tz) (now)))
                 (command/accepted w)))))
 
 (defn- job-rename-command
@@ -1473,6 +1496,10 @@
   (swap! db assoc :skills (skills/load-all (skills/checkout)))
   (load-chats!)
   (jobs/load! jobs)
+  ;; the daily wake of a sprite, then the clock once: a wake of the
+  ;; machine fires what is due and sets the alarm for the next minute
+  (wake/ensure-daily! wake-config)
+  (jobs/tick! jobs)
   ;; a Composio connection the Storrito agent brings, declared deferred:
   ;; direct before the first chat starts
   (mcp/composio-direct! connections)

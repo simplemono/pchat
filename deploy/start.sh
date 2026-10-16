@@ -8,7 +8,7 @@
 set -a
 [ -f /home/sprite/pchat/.env ] && . /home/sprite/pchat/.env
 set +a
-export PATH=/home/sprite/.local/bin:/.sprite/bin:/usr/local/bin:/usr/bin:/bin
+export PATH=/home/sprite/.local/bin:/usr/local/share/mise/shims:/.sprite/bin:/usr/local/bin:/usr/bin:/bin
 export PORT=8080
 export PCHAT_WORKSPACE=/home/sprite/pchat/workspace
 export BB=/home/sprite/.local/bin/bb
