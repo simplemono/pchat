@@ -302,6 +302,18 @@ of that happens: pchat runs on. `bin/job
 show|list|run|pause|resume|rename|delete` are the rest (`pchat.jobs`,
 `pchat.jobs-view`).
 
+A Sprite made with its auto idle off (`auto_idle: false`) runs until
+someone stops it, so that a long render or a working agent is never
+frozen with the machine; pchat stops it, with `sprite-env stop`, once
+nothing has been going on for ten minutes: no chat works, no video
+renders, no background task or run of a job is going, no page is open,
+and nothing is being installed from outside (the setup markers, and
+`~/.local/provisioning`, which whoever sets the machine up touches
+while working on it; one older than an hour counts for nothing). The
+next request to the page, the jobs' alarm or a command from outside
+wakes the machine again in a second (`pchat.sleep`; `PCHAT_SLEEP=off`
+switches it off, `PCHAT_SLEEP_AFTER_MIN` sets the minutes).
+
 ### Sharing
 
 Share in the artifacts bar makes a link anyone can open,
