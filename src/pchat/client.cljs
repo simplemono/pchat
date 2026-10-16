@@ -150,6 +150,29 @@
                             (on-error 0)))
     (.send xhr blob)))
 
+(defn- send-in-pieces!
+  "Sends `file` to `url` in pieces of `piece-bytes`, `?id&offset&total`
+  on each (`pchat.pieces` on the server): `on-progress` with the share
+  of the bytes sent, `on-answer` with the server's answer to the last
+  piece, `on-error` with the status of a piece that failed; `continue?`,
+  when given, is asked before each further piece."
+  [url ^js file type {:keys [on-progress on-answer on-error continue?]}]
+  (let [id (random-id)
+        total (.-size file)]
+    ((fn step [offset]
+       (let [end (min total (+ offset piece-bytes))]
+         (send-piece! (str url "?id=" id "&offset=" offset "&total=" total)
+                      (.slice file offset end)
+                      type
+                      {:on-progress (fn [loaded]
+                                      (on-progress (/ (+ offset loaded) (max total 1))))
+                       :on-answer (fn [answer]
+                                    (cond
+                                      (<= total end) (on-answer answer)
+                                      (or (nil? continue?) (continue?)) (step end)))
+                       :on-error on-error})))
+     0)))
+
 (defn- upload-clip!
   "Uploads a video or an audio file in pieces. Its chip is in the
   attachments from the start, `:uploading?` with its `:progress`; the last
@@ -157,9 +180,7 @@
   chip the person removes stops the upload after the piece under way."
   [store attachments-key upload-url ^js file]
   (let [type (clip-type file)
-        id (random-id)
-        total (.-size file)
-        chip (str "uploading-" id)
+        chip (str "uploading-" (random-id))
         present? (fn []
                    (some #(= chip (:chip %)) (get @store attachments-key)))
         update-chip! (fn [f]
@@ -172,28 +193,22 @@
                                       :chip chip
                                       :kind (if (str/starts-with? type "audio/") :audio :video)
                                       :file-name (.-name file)
-                                      :size total
+                                      :size (.-size file)
                                       :uploading? true
                                       :progress 0})))
-    ((fn step [offset]
-       (let [end (min total (+ offset piece-bytes))]
-         (send-piece! (str upload-url "?id=" id "&offset=" offset "&total=" total)
-                      (.slice file offset end)
-                      type
-                      {:on-progress (fn [loaded]
-                                      (update-chip! #(assoc % :progress (/ (+ offset loaded) (max total 1)))))
-                       :on-answer (fn [{:keys [url] :as answer}]
-                                    (cond
-                                      url (update-chip! #(-> %
-                                                             (merge (select-keys answer [:name :url :kind :size]))
-                                                             (dissoc :uploading? :progress)))
-                                      (present?) (step end)))
-                       :on-error (fn [status]
-                                   (js/console.error "[upload] a piece failed with" status)
+    (send-in-pieces! upload-url file type
+                     {:on-progress (fn [share]
+                                     (update-chip! #(assoc % :progress share)))
+                      :on-answer (fn [answer]
                                    (update-chip! #(-> %
-                                                      (dissoc :uploading? :progress)
-                                                      (assoc :failed? true))))})))
-     0)))
+                                                      (merge (select-keys answer [:name :url :kind :size]))
+                                                      (dissoc :uploading? :progress))))
+                      :on-error (fn [status]
+                                  (js/console.error "[upload] a piece failed with" status)
+                                  (update-chip! #(-> %
+                                                     (dissoc :uploading? :progress)
+                                                     (assoc :failed? true))))
+                      :continue? present?})))
 
 (defn- upload-all!
   [store attachments-key upload-url files]
@@ -392,6 +407,46 @@
   (close-drawer!)
   (show! id))
 
+(defn- import-zip!
+  "Sends the zip of an exported chat to /import in pieces and opens the
+  chat it became (`pchat.import` on the server). How far it is, or that
+  it failed, is `:pchat/import` in the store, for `import-control`."
+  [^js file]
+  (swap! state/store assoc :pchat/import {:progress 0})
+  (send-in-pieces! "/import" file "application/zip"
+                   {:on-progress (fn [share]
+                                   (swap! state/store assoc :pchat/import {:progress share}))
+                    :on-answer (fn [{:keys [id]}]
+                                 (swap! state/store dissoc :pchat/import)
+                                 (when id
+                                   (go! id)))
+                    :on-error (fn [status]
+                                (js/console.error "[import] failed with" status)
+                                (swap! state/store assoc :pchat/import {:failed? true}))}))
+
+(defn import-control
+  "`[:ui/import {:ui/labels {:import :importing :failed}}]` in the
+  sidebar: a file input behind a label. The zip chosen goes up
+  (`import-zip!`); meanwhile the label says how far, in percent, or
+  that it failed, from `:pchat/import` in the client state."
+  [{:keys [ui/labels ui/state]} _children]
+  (let [{:keys [progress failed?]} (:pchat/import state)]
+    [:label.import {:class (cond
+                             progress "busy"
+                             failed? "failed")}
+     [:input {:type "file"
+              :accept ".zip,application/zip"
+              :disabled (some? progress)
+              :style {:display "none"}
+              :on {:change (fn [^js event]
+                             (when-let [^js file (first (array-seq (.. event -target -files)))]
+                               (import-zip! file))
+                             (set! (.. event -target -value) ""))}}]
+     (cond
+       progress (str (:importing labels "Importing") " " (js/Math.round (* 100 progress)) " %")
+       failed? (:failed labels "The import failed")
+       :else (:import labels "Import a zip"))]))
+
 (defn job-id-of
   "The job id of a page path, `/job/<id>`; nil for any other path."
   [path]
@@ -493,7 +548,8 @@
 (def register
   "rchat's aliases, then pchat's composer, which replaces rchat's: the
   later registration of a kind wins; the theme choice; the URL of the
-  chat; `:pchat/tabid` in a command, the id of this tab;
+  chat; the import of an exported chat; `:pchat/tabid` in a command,
+  the id of this tab;
   `[:pchat/checked text]`, the text with the choices ticked in an
   answer's block; and `:pchat/timezone` in a command, the browser's
   time zone."
@@ -504,6 +560,8 @@
             :ui.alias/fn theme-toggle}
            {:ui.alias/kind :ui/url
             :ui.alias/fn url-alias}
+           {:ui.alias/kind :ui/import
+            :ui.alias/fn import-control}
            ;; `[:dom/copy text]`: the text to the clipboard, the
            ;; endpoint of a job.
            {:ui.action/kind :dom/copy

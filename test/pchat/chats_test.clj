@@ -1,6 +1,8 @@
 (ns pchat.chats-test
   (:require [babashka.fs :as fs]
+            [cheshire.core :as json]
             [clojure.java.io :as io]
+            [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [pchat.chats :as chats]))
 
@@ -80,3 +82,26 @@
     (testing "deleting the chat removes the link"
       (chats/delete! chats-dir id)
       (is (not (fs/exists? link {:nofollow-links true}))))))
+
+(deftest write-session-test
+  (let [from (temp-dir)
+        workspace (temp-dir)
+        chats-dir (io/file workspace "chats")
+        id (chats/new-id)
+        file (io/file from "2026-10-13T14-41-30-309Z_45a549c4-5c50-4113-8d9e-a3114f8a81bb.jsonl")]
+    (spit file (str (json/generate-string {:type "session" :version 3 :id "45a549c4-5c50-4113-8d9e-a3114f8a81bb" :cwd from}) "\n"
+                    "{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":\"ping\"}}\n"))
+    (testing "the file under the chat's id in its session folder: the name, the header's id and cwd; the rest as it was"
+      (let [written (chats/write-session! chats-dir id file)
+            [header message] (str/split-lines (slurp written))]
+        (is (= (str (io/file (chats/session-dir chats-dir id) (str "2026-10-13T14-41-30-309Z_" id ".jsonl"))) (str written)))
+        (is (= {:type "session" :version 3 :id id :cwd (str (chats/dir chats-dir id))} (json/parse-string header true)))
+        (is (str/includes? message "ping"))
+        (is (.isFile file) "the source stays")))
+    (testing "no session file of pi: nothing written"
+      (let [other (io/file from "notes.jsonl")]
+        (spit other "{}")
+        (is (nil? (chats/write-session! chats-dir id other))))
+      (let [no-header (io/file from "2026-10-13T14-41-30-309Z_45a549c4-5c50-4113-8d9e-a3114f8a81bc.jsonl")]
+        (spit no-header "{\"type\":\"message\"}\n")
+        (is (nil? (chats/write-session! chats-dir id no-header)))))))

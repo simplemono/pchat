@@ -35,6 +35,7 @@
             [pchat.chat :as chat]
             [pchat.chats :as chats]
             [pchat.export :as export]
+            [pchat.import :as import]
             [pchat.jobs :as jobs]
             [pchat.i18n :as i18n]
             [pchat.schedule :as schedule]
@@ -1388,6 +1389,17 @@
     (job-stream w)
     (not-found w)))
 
+(defn- import-post
+  "POST /import: the zip of an export, in pieces; with the last one the
+  chat it holds is a new one of this machine (see `pchat.import`), in
+  the list at once; the browser opens it."
+  [w]
+  (import/handler {:workspace workspace
+                   :max-bytes uploads/max-bytes
+                   :add-chat! (fn [id]
+                                (swap! db assoc-in [:chats id] (chat-summary id)))}
+                  w))
+
 (def register
   [(http/resources "/rchat.css" "pchat/chat.css")
    (http/resources "/pchat.css" "pchat/pchat.css")
@@ -1404,6 +1416,8 @@
     :ring/handler #'chat-post}
    {:ring/route [:get "/task/*"]
     :ring/handler #'task-link}
+   {:ring/route [:post "/import"]
+    :ring/handler #'import-post}
    {:ring/route [:get "/job/*"]
     :ring/handler #'job-get}
    {:ring/route [:post "/job/*"]

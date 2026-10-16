@@ -508,7 +508,7 @@
   URL. `:id` in `opts` is the chat this tab shows, `:locale` the
   language of the page. The button for a new chat names the tab
   (`:pchat/tabid`, filled in by the runtime), so that the new chat
-  opens here."
+  opens here; under it the import of an exported chat."
   ([db]
    (sidebar db {}))
   ([{:keys [chats jobs deleting settings-open update]} {:keys [id locale] :as opts}]
@@ -527,6 +527,12 @@
                   :on {:click [[:data/command {:command/kind :chat/new
                                                :command/data {:tab :pchat/tabid}}]]}}
       [:i18n :chat/new]]
+     ;; The zip of an export as a new chat (`pchat.import`): the browser
+     ;; sends it up and shows how far it is (`:ui/import` in
+     ;; `pchat.client`); the server only names the texts.
+     [:ui/import {:ui/labels {:import [:i18n :chat/import]
+                              :importing [:i18n :chat/importing]
+                              :failed [:i18n :chat/import-failed]}}]
      ;; The list is keyed by its order: a chat that moves to the top
      ;; makes a new list. Replicant 2026.07.1 records the wrong vdom for
      ;; a row it moves to the front, and the row's next change (the
