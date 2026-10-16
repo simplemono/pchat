@@ -7,6 +7,8 @@
       PCHAT_MODEL      default openai/gpt-6.1-sol
       PCHAT_TOKEN      a secret: the page is behind the link that sets the cookie
       PCHAT_AGENTITOS  an agentitos checkout: its skills are the tasks a chat can be for
+      PCHAT_SLEEP      off: the machine is not put to sleep when idle (`pchat.sleep`)
+      PCHAT_SLEEP_AFTER_MIN  the idle minutes before it is, default 10
       BB               the babashka executable for the artifact projects, default bb
 
   The variables come from the environment, or from .env and .env.local
@@ -30,6 +32,7 @@
             [org.httpkit.server :as server]
             [pchat.artifacts :as artifacts]
             [pchat.awake :as awake]
+            [pchat.sleep :as sleep]
             [pchat.chat :as chat]
             [pchat.chats :as chats]
             [pchat.jobs :as jobs]
@@ -527,6 +530,29 @@
   "How many runs are going; `bin/tick` waits while there are any."
   []
   (count (jobs/active-runs jobs)))
+
+(defn- installing?
+  "Whether pi or the video tools are being installed, from outside: the
+  markers of `pchat.setup`."
+  []
+  (boolean (some #(= :installing (:state %)) (vals (setup/state setup)))))
+
+(defn- pages-open
+  "How many pages are connected. rframes keeps the registry of the
+  connections to itself; the count is all pchat needs."
+  []
+  (count @@#'sse/conns))
+
+(defn- busy?
+  "Whether the machine has something to do, for `pchat.sleep`: work of
+  a chat, a video or a background task, a run of a job, an open page,
+  an install from outside, or a provisioning that works on the machine."
+  []
+  (boolean (or (not (idle?))
+               (pos? (runs-active))
+               (pos? (pages-open))
+               (installing?)
+               (sleep/provisioning? (:markers-dir setup) (now)))))
 
 (defn- keep!
   "The message of a chat whose agent is not there yet: kept in the
@@ -1518,6 +1544,9 @@
   (jobs/watch! jobs)
   ;; On a Sprite: no pause while a chat works or a video renders.
   (awake/watch! #(not (idle?)))
+  ;; On a Sprite whose auto idle is off: to sleep once nothing has
+  ;; been going on for a while.
+  (sleep/watch! busy?)
   (.addShutdownHook (Runtime/getRuntime) (Thread. #(do (projects/stop-all! projects)
                                                        (render/stop-all! renders))))
   (sse/watch! db)

@@ -5,8 +5,10 @@
 ;; `pchat.wake`): the sprite wakes, pchat starts as its service, this
 ;; waits for it to answer, tells it to tick (the due jobs run, the alarm
 ;; is set to the next minute), and keeps the exec open while a run is
-;; going, because a sprite sleeps thirty seconds after its last open
-;; exec. Talks to pchat over its local nREPL (`.nrepl-port` in the
+;; going, because the automation puts a sprite it woke back to sleep
+;; once its exec ends (and a sprite with its auto idle on sleeps thirty
+;; seconds after its last open exec anyway). Talks to pchat over its
+;; local nREPL (`.nrepl-port` in the
 ;; workspace); nothing to configure. By hand: `bin/tick` from any chat
 ;; folder.
 (require '[babashka.classpath :refer [add-classpath]]

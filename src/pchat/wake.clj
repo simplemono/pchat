@@ -5,7 +5,8 @@
   machine's own automations do it: `pchat-wake` is one automation whose
   cron line is that minute in UTC and whose action runs `bin/tick`,
   which wakes the sprite, ticks the clock and stays until the runs are
-  done (an exec is what keeps a sprite awake), then lets it sleep again;
+  done (the automation puts a sprite it woke back to sleep once its
+  exec ends, `--after sleep_if_woken`), then lets it sleep again;
   `pchat-daily` wakes it once a day besides, so that an alarm lost to a
   crash is set again within a day. Both are set from inside the sprite
   with `sprite-env`, no token involved. Without `sprite-env` (a laptop,
