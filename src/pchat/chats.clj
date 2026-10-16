@@ -108,6 +108,15 @@
   process starts. One change there reaches every chat."
   ["bin" ".pchat" ".pi"])
 
+(def local-only
+  "What a chat's folder holds that is this machine's, not the chat's:
+  the temporary files of its processes and the ids of its share links
+  (`pchat.share`), which resolve on this server alone. With the links
+  (`links`, and every other symlink) it is what a copy of the chat for
+  another place leaves behind: the template of a job (`pchat.jobs`),
+  the export (`pchat.export`)."
+  #{"tmp" ".shares.edn"})
+
 (defn create!
   "The folder of the chat with its subfolders and links, the parts that
   are missing. Answers the id."
