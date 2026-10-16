@@ -34,6 +34,7 @@
             [pchat.sleep :as sleep]
             [pchat.chat :as chat]
             [pchat.chats :as chats]
+            [pchat.export :as export]
             [pchat.jobs :as jobs]
             [pchat.i18n :as i18n]
             [pchat.schedule :as schedule]
@@ -1295,9 +1296,19 @@
         w))
     w))
 
+(defn- export-name
+  "What the zip of the chat is called: the chat's name as the sidebar
+  shows it, in the language of the page, made fit for a file name."
+  [w id]
+  (ensure-loaded! id)
+  (let [name (view/chat-name (get-in @db [:chats id]))]
+    (export/file-name (if (string? name) name (say w name)) id)))
+
 (defn- chat-get
   "GET /chat/<id>: the page; /chat/<id>/artifacts/<path>: a running
-  project's page, else the file; /chat/<id>/uploads/<name>: the file."
+  project's page, else the file; /chat/<id>/uploads/<name>: the file;
+  /chat/<id>/export.zip: the chat's folder as a download (see
+  `pchat.export`)."
   [w]
   (let [[id rest] (split-chat-path w)]
     (cond
@@ -1309,6 +1320,12 @@
                                :headers {"Content-Type" "text/html; charset=utf-8"
                                          "Cache-Control" "no-cache"}
                                :body (replicant/shim-html head)})
+
+      (= "export.zip" rest)
+      (if (and (get-in @db [:chats id])
+               (.isDirectory (chats/dir chats-dir id)))
+        (assoc w :ring/response (export/response (chats/dir chats-dir id) (export-name w id)))
+        (not-found w))
 
       (str/starts-with? rest "artifacts/")
       (let [w (under w rest "artifacts/")

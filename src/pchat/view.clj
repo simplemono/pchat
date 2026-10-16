@@ -228,9 +228,10 @@
   that chat, like the menu of a chat on claude.ai. A <details>, so the
   browser opens and closes it; the runtime (`pchat.client`) closes it
   on a click elsewhere. The job (see `pchat.jobs`) names the tab, so
-  that the job's page opens here; a delete arms the question in the
-  row. `:pchat/timezone` is the browser's time zone, the job's from then
-  on."
+  that the job's page opens here; the export is a link to the download
+  of the chat's folder (`pchat.export`), the browser's own; a delete
+  arms the question in the row. `:pchat/timezone` is the browser's time
+  zone, the job's from then on."
   [{:keys [id]}]
   [:details.actions
    [:summary {:aria-label [:i18n :chat/actions]
@@ -242,6 +243,9 @@
                                                                    :tab :pchat/tabid
                                                                    :tz :pchat/timezone}}]]}}
      [:i18n :job/turn]]
+    [:a.item.export {:href (str (chats/url id) "/export.zip")
+                     :download ""}
+     [:i18n :chat/export]]
     [:button.item.danger {:on {:click [[:data/command {:command/kind :chat/delete
                                                        :command/data {:id id}}]]}}
      [:i18n :chat/delete]]]])

@@ -270,6 +270,12 @@ html.theme-dark {
   background: var(--pchat-sidebar-hover);
 }
 
+/* The export is a link to a download; it looks like the buttons. */
+.pchat .sidebar .chats li .actions a.item {
+  display: block;
+  text-decoration: none;
+}
+
 .pchat .sidebar .chats li .actions .item.danger {
   color: var(--pchat-danger);
 }

@@ -189,10 +189,13 @@
 ;;; The template
 
 (def template-skipped
-  "What a chat's folder holds that is not the template: its history,
-  its temporary files, the links to the shared parts, what the page
-  keeps about the chat, and what the webhook of earlier versions left."
-  #{".session" "tmp" "bin" ".pchat" ".pi" ".chat.edn" ".shares.edn" ".hook.edn" ".runs.edn" "hook.clj" "hook.log"})
+  "What a chat's folder holds that is not the template: what is this
+  machine's (`pchat.chats/local-only`) and the links to the shared
+  parts, its history, what the page keeps about the chat, and what the
+  webhook of earlier versions left."
+  (into chats/local-only
+        (concat chats/links
+                [".session" ".chat.edn" ".hook.edn" ".runs.edn" "hook.clj" "hook.log"])))
 
 (defn- copy-tree!
   "The entries of `from` into `to`, over what is there."

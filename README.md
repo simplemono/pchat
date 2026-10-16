@@ -105,6 +105,16 @@ design to rebuild, not material to crop (`resources/pchat/prompts/system.md`).
 The artifacts pane shows the chat's own folder only. Deleting a chat
 deletes its folder.
 
+"Export as zip" in a chat's menu downloads the folder as `<name>.zip`
+(`pchat.export`): `.chat.edn`, `.session/`, `artifacts/`, `uploads/`
+and whatever else the agent put there, with their modification times,
+an empty folder as well. Not in it: the links (`bin`, `.pchat`, `.pi`,
+a job conversation's `template`; no link is followed), `tmp/`, and
+`.shares.edn`, whose ids resolve on this server alone. The export is
+for yourself: an agent may have written a key or a password into a
+file during a run, so an export meant for someone else deserves a look
+inside first. There is no import yet.
+
 The id of a chat is a UUID version 7 (`pchat.chats/new-id`, the time
 first, so the folders sort by age): the name of its folder, the id of
 its pi session, and the id in its URL. Every chat has a page,
