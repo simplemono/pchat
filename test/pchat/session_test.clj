@@ -54,7 +54,7 @@
     (let [nodes (fn [li tag] (filter #(and (vector? %) (= tag (first %))) (tree-seq coll? seq li)))
           commands (fn [li] (->> (nodes li :data/command) (map (comp :command/kind second))))]
       (is (= "/chat/b" (get-in (first (nodes (first lis) :a.row)) [1 :href])) "a row is a link to the chat's page")
-      (is (= [:hook/toggle :chat/delete] (commands (first lis))) "the actions of the chat are in the row's menu")
+      (is (= [:job/turn :chat/delete] (commands (first lis))) "the actions of the chat are in the row's menu")
       (is (= "b" (-> (nodes (first lis) :details.actions) first (nth 2) (nth 1) (get-in [1 :on :click 0 1 :command/data :id])))
           "the menu acts on its own chat"))
     (is (some #{"New chat"} (filter string? (tree-seq coll? seq sidebar)))))

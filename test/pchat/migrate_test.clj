@@ -47,7 +47,7 @@
 
 (defn- old-workspace!
   "Two old sessions, one with a picture and a clip; a stamped project
-  with its video, an unstamped page; a name, a hook, a share."
+  with its video, an unstamped page; a name, a share."
   []
   (let [workspace (str (fs/create-temp-dir {:prefix "pchat-migrate"}))]
     (write! workspace (str ".pchat/sessions/2026-10-10T08-32-22-664Z_" id-a ".jsonl")
@@ -63,9 +63,6 @@
     (write! workspace ".pchat/artifact-owners.edn" (pr-str {"card" {:chat id-a :at 1} "card.mp4" {:chat id-a :at 2}}))
     (write! workspace ".pchat/names.edn" (pr-str {id-a "Pool card"}))
     (write! workspace ".pchat/tasks.edn" (pr-str {id-b :free}))
-    (write! workspace ".pchat/hooks.edn" (pr-str {id-a {:secret "abc" :created 1}}))
-    (write! workspace ".pchat/runs/42c8f147-72f8-4dcc-bbf8-6e5039770d34.edn" (pr-str [{:n 1 :exit 0}]))
-    (write! workspace "hooks/42c8f147-72f8-4dcc-bbf8-6e5039770d34.clj" "(println 1)")
     (write! workspace ".pchat/shares.edn" (pr-str {"notes.html" "0123456789abcdef0123" "card.mp4" "fedcba9876543210fedc"}))
     ;; what pchat installs at start: the script and the lib it loads
     (write! workspace "bin/migrate-chats" (slurp "resources/pchat/bin/migrate-chats"))
@@ -89,7 +86,7 @@
           earlier (some #(when (= "Earlier artifacts" (:name (chats/meta chats-dir %))) %) ids)]
       (is (= "3 chats brought back" (last lines)))
       (is (= 3 (count ids)))
-      (testing "a session is a chat with its file, name, task, picture, clip and hook"
+      (testing "a session is a chat with its file, name, task, picture and clip"
         (let [file (first (session/files (chats/session-dir chats-dir id-a)))]
           (is (= id-a (session/id-of file)) "pi's file name kept")
           (is (= id-a (:id (session/summary file))))
@@ -103,9 +100,6 @@
                 "the page finds it under the chat"))
           (is (.isFile (io/file (chats/uploads-dir chats-dir id-a) "ab12.mp4")) "the clip the message names")
           (is (not (.exists (io/file workspace "uploads" "ab12.mp4"))))
-          (is (= {:secret "abc" :created 1} (edn/read-string (slurp (io/file chats-dir id-a ".hook.edn")))))
-          (is (= [{:n 1 :exit 0}] (edn/read-string (slurp (io/file chats-dir id-a ".runs.edn")))))
-          (is (= "(println 1)" (slurp (io/file chats-dir id-a "hook.clj"))))
           (is (.isFile (io/file workspace ".pchat" "looks" "other.png")) "nothing deleted")))
       (testing "the stamped artifacts are the chat's, the rest one chat's"
         (is (.isFile (io/file (chats/artifacts-dir chats-dir id-a) "card" "bb.edn")))

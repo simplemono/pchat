@@ -10,8 +10,6 @@
 ;;   the pictures in a session         -> chats/<id>/uploads/, named by their content
 ;;   uploads/<clip> named in a session -> chats/<id>/uploads/
 ;;   .pchat/names.edn, tasks.edn       -> chats/<id>/.chat.edn
-;;   .pchat/hooks.edn, runs/<id>.edn,
-;;   hooks/<id>.clj, hooks/<id>.log    -> chats/<id>/.hook.edn, .runs.edn, hook.clj, hook.log
 ;;   artifacts/<x> stamped for a chat
 ;;   in .pchat/artifact-owners.edn     -> chats/<id>/artifacts/<x>
 ;;   every other artifact              -> the artifacts of one chat "Earlier artifacts"
@@ -121,9 +119,8 @@
 
 (defn migrate-session!
   "One old session: its chat folder, the file moved in, its pictures,
-  its name and task, its webhook. Answers the names of the clips it
-  refers to."
-  [file names tasks hooks]
+  its name and task. Answers the names of the clips it refers to."
+  [file names tasks]
   (let [id (session-id file)
         entries (entries file)]
     (chats/create! "." id)
@@ -134,15 +131,6 @@
                                                  (get names id) (assoc :name (get names id))
                                                  (get tasks id) (assoc :task (get tasks id)))
                                                %)))
-    (when-let [hook (get hooks id)]
-      (let [target (fs/file (chats/dir chats-dir id) ".hook.edn")]
-        (when-not (fs/exists? target)
-          (write-edn! target hook))))
-    (move! (fs/file ".pchat" "runs" (str id ".edn")) (fs/file (chats/dir chats-dir id) ".runs.edn"))
-    (move! (fs/file "hooks" (str id ".clj")) (fs/file (chats/dir chats-dir id) "hook.clj"))
-    (move! (fs/file "hooks" (str id ".log")) (fs/file (chats/dir chats-dir id) "hook.log"))
-    (when (and (fs/exists? (fs/file (chats/dir chats-dir id) "hook.clj")) (fs/directory? "data"))
-      (copy! (fs/file "data") (fs/file (chats/dir chats-dir id) "data")))
     [id (clip-names entries)]))
 
 (defn clips!
@@ -214,7 +202,6 @@
 
 (let [names (read-edn (fs/file ".pchat" "names.edn") {})
       tasks (read-edn (fs/file ".pchat" "tasks.edn") {})
-      hooks (read-edn (fs/file ".pchat" "hooks.edn") {})
       owners (read-edn (fs/file ".pchat" "artifact-owners.edn") {})
       shares (read-edn (fs/file ".pchat" "shares.edn") {})
       sessions (if (fs/directory? (fs/file ".pchat" "sessions"))
@@ -225,7 +212,7 @@
                  [])
       before (set (chats/ids chats-dir))]
   (fs/create-dirs chats-dir)
-  (let [migrated (mapv #(migrate-session! % names tasks hooks) sessions)]
+  (let [migrated (mapv #(migrate-session! % names tasks) sessions)]
     (clips! migrated))
   (stamped-artifacts! owners)
   (when (fs/directory? "artifacts")

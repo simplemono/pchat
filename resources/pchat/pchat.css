@@ -146,7 +146,8 @@ html.theme-dark {
   background: var(--pchat-sidebar-hover);
 }
 
-.pchat .sidebar .chats {
+.pchat .sidebar .chats,
+.pchat .sidebar .jobs {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -155,14 +156,16 @@ html.theme-dark {
   gap: 2px;
 }
 
-.pchat .sidebar .chats li {
+.pchat .sidebar .chats li,
+.pchat .sidebar .jobs li {
   display: flex;
   align-items: center;
   border-radius: 8px;
   cursor: pointer;
 }
 
-.pchat .sidebar .chats li .row {
+.pchat .sidebar .chats li .row,
+.pchat .sidebar .jobs li .row {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
@@ -178,16 +181,19 @@ html.theme-dark {
   text-decoration: none;
 }
 
-.pchat .sidebar .chats li .name {
+.pchat .sidebar .chats li .name,
+.pchat .sidebar .jobs li .name {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.pchat .sidebar .chats li:hover {
+.pchat .sidebar .chats li:hover,
+.pchat .sidebar .jobs li:hover {
   background: var(--pchat-sidebar-hover);
 }
 
-.pchat .sidebar .chats li.current {
+.pchat .sidebar .chats li.current,
+.pchat .sidebar .jobs li.current {
   background: var(--pchat-sidebar-current);
   color: var(--pchat-sidebar-current-text);
 }
@@ -268,10 +274,6 @@ html.theme-dark {
   color: var(--pchat-danger);
 }
 
-.pchat .sidebar .chats li .actions .item.hook.on::after {
-  content: " \2713";
-}
-
 /* The row while a delete is armed, see pchat.view/delete-confirm. */
 .pchat .sidebar .chats li .confirm {
   display: flex;
@@ -342,52 +344,6 @@ html.theme-dark {
 .pchat .rchat .bar button.link:hover {
   color: var(--rchat-text);
   text-decoration: underline;
-}
-
-/* The webhook panel under the header, see pchat.hooks. */
-.pchat .rchat .hook-panel {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-  padding: 8px 20px;
-  border-bottom: 1px solid var(--rchat-line);
-  background: var(--rchat-panel);
-  font-size: 13px;
-  color: var(--rchat-muted);
-}
-
-.pchat .rchat .hook-panel .explain {
-  flex: 1;
-  min-width: 200px;
-}
-
-.pchat .rchat .hook-panel input.hook-url {
-  flex: 1;
-  min-width: 200px;
-  padding: 4px 8px;
-  border: 1px solid var(--rchat-line);
-  border-radius: 6px;
-  background: var(--rchat-bg);
-  font: inherit;
-  font-size: 12px;
-  color: var(--rchat-text);
-  text-overflow: ellipsis;
-}
-
-.pchat .rchat .hook-panel button.link {
-  padding: 2px 6px;
-  border: 0;
-  background: none;
-  color: var(--rchat-muted);
-  font: inherit;
-  font-size: 13px;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.pchat .rchat .hook-panel button.link:hover {
-  color: var(--rchat-text);
 }
 
 /* The settings in place of the chat, opened from the bottom of the
@@ -703,17 +659,6 @@ html.theme-dark {
   width: auto;
 }
 
-.rchat .feed .run .made button.link {
-  padding: 0;
-  margin-right: 10px;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
 .pchat .rchat .bar .confirm {
   display: inline-flex;
   align-items: center;
@@ -872,7 +817,8 @@ html.theme-dark {
     pointer-events: auto;
   }
 
-  .pchat .sidebar .chats li .row {
+  .pchat .sidebar .chats li .row,
+  .pchat .sidebar .jobs li .row {
     min-height: 44px;
   }
 
@@ -1161,4 +1107,213 @@ html.theme-dark {
 
 .pchat .rchat .settings .updates .result.failed {
   color: var(--rchat-warn);
+}
+
+.pchat .sidebar .jobs-heading {
+  margin: 12px 8px 4px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--pchat-sidebar-muted, var(--rchat-muted));
+}
+
+.pchat .sidebar .jobs li .row {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.pchat .sidebar .jobs li .meta {
+  display: block;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.pchat .rchat .job .state.failed,
+.pchat .rchat .job .state.stopped {
+  color: var(--rchat-warn);
+}
+
+.pchat .rchat .job .state.done {
+  color: var(--rchat-ok);
+}
+
+/* The job beside its conversation on the job's page, see
+   pchat.jobs-view: in the card's place, scrolling by itself. */
+.pchat .rchat .card.job {
+  overflow-y: auto;
+  font-size: 14px;
+}
+
+/* Each section starts with a hairline and its heading; the actions
+   row at the top stands alone. */
+.pchat .rchat .job h2 {
+  margin: 28px 0 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--rchat-line);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--rchat-muted);
+}
+
+.pchat .rchat .job .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 6px 0;
+}
+
+.pchat .rchat .job .actions .state {
+  font-weight: 600;
+}
+
+/* Run now, Pause, Delete, Save and Copy stay rchat's buttons; the quick
+   picks, Cancel and the way to turn the schedule off read as links. */
+.pchat .rchat .job .picks button,
+.pchat .rchat .job button.off,
+.pchat .rchat .job .proposal button:not(.save) {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--rchat-muted);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.pchat .rchat .job .picks button:hover,
+.pchat .rchat .job button.off:hover,
+.pchat .rchat .job .proposal button:not(.save):hover {
+  color: var(--rchat-text);
+}
+
+.pchat .rchat .job button.danger {
+  color: #b42318;
+}
+
+.pchat .rchat .job button.save {
+  font-weight: 600;
+}
+
+.pchat .rchat .job .actions .confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.pchat .rchat .job .note {
+  margin: 8px 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--rchat-muted);
+}
+
+.pchat .rchat .job .error {
+  margin: 4px 0;
+  font-size: 13px;
+  color: #b42318;
+}
+
+.pchat .rchat .job .schedule-now {
+  margin: 8px 0 4px;
+  font-weight: 600;
+}
+
+.pchat .rchat .job code.cron {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--rchat-muted);
+}
+
+/* What the person can edit stands out like the composer's box: white
+   on the page's warm grey (the panel surface in the dark theme); the
+   endpoint, which is only copied, stays flat and muted. */
+.pchat .rchat .job input.line,
+.pchat .rchat .job textarea.prompt,
+.pchat .rchat .job select {
+  display: block;
+  width: 100%;
+  margin: 12px 0 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--rchat-line);
+  border-radius: 6px;
+  background: var(--rchat-panel);
+  font: inherit;
+  color: var(--rchat-text);
+}
+
+.pchat .rchat .job .actions input.line.endpoint {
+  flex: 1;
+  min-width: 200px;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  border-style: dashed;
+  background: transparent;
+  color: var(--rchat-muted);
+  cursor: default;
+}
+
+.pchat .rchat .job textarea.prompt {
+  min-height: 160px;
+  resize: vertical;
+}
+
+.pchat .rchat .job .picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+
+.pchat .rchat .job .proposal {
+  margin: 12px 0 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--rchat-line);
+  border-radius: 8px;
+  background: var(--rchat-panel);
+}
+
+.pchat .rchat .job .proposal p {
+  margin: 2px 0;
+}
+
+.pchat .rchat .job .zone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 8px;
+}
+
+.pchat .rchat .job .zone select {
+  display: inline-block;
+  width: auto;
+  margin: 0;
+  padding: 2px 6px;
+  font-size: 13px;
+}
+
+.pchat .rchat .job table.runs {
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.pchat .rchat .job table.runs td {
+  padding: 5px 14px 5px 0;
+  vertical-align: top;
+}
+
+.pchat .rchat .job table.runs .state.running {
+  color: #1c6b3a;
+}
+
+.pchat .rchat .job table.runs .state.failed {
+  color: #b42318;
 }
